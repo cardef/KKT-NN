@@ -49,9 +49,9 @@ class ResidualBlock(nn.Module):
         super().__init__()
         device = torch.device("cuda" if torch.cuda.is_available() else "mps")
         self.linear = nn.Linear(n, n).to(dtype=torch.float32, device=device)
-        self.relu = nn.Tanh()
-        self.ln = nn.LayerNorm(n)
-        self.dropout = nn.Dropout(0.0)
+        self.relu = nn.LeakyReLU()
+        self.ln = nn.BatchNorm1d(n)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, X):
         identity = X
@@ -68,10 +68,12 @@ class Net(nn.Module):
         super().__init__()
         device = torch.device("cuda" if torch.cuda.is_available() else "mps")
         self.mlp = nn.Sequential(
-            #nn.LayerNorm(1),
+            nn.BatchNorm1d(8),
 
             nn.Linear(8, 512),
             nn.LeakyReLU(),
+            ResidualBlock(512),
+            ResidualBlock(512),
             ResidualBlock(512),
             ResidualBlock(512),
             ResidualBlock(512),
@@ -99,13 +101,13 @@ class KKT_NN():
         self.tb_logger = SummaryWriter("loads/tb_logs")
         self.alpha = 0.9
         self.beta_p = 0.999
-        self.tau = 1e-3
+        self.tau = 1e-5
         self.n_iter = 0
         self.eps = 1e-4
         self.es= EarlyStopper(patience = 10000)
         self.plateau = False
         self.automatic_optimization = False
-        self.optimizer = optim.Adam(self.net.parameters(), lr=1e-5)
+        self.optimizer = optim.NAdam(self.net.parameters(), lr=1E-5)
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.99999)
         self.coeffs = torch.ones(4, device=self.device, dtype=torch.float32)
         self.coeffs[0] = 1.0
@@ -217,7 +219,7 @@ class KKT_NN():
         if self.previous_losses is None:
             self.previous_losses = losses
 
-        #self.coeffs = self.alpha*(beta*self.coeffs + (1-beta)*self.coeff_rel_improv(losses, self.initial_losses)) + (1-self.alpha)*self.coeff_rel_improv(losses, self.previous_losses)
+        self.coeffs = self.alpha*(beta*self.coeffs + (1-beta)*self.coeff_rel_improv(losses, self.initial_losses)) + (1-self.alpha)*self.coeff_rel_improv(losses, self.previous_losses)
         
         self.previous_losses = losses
 
@@ -240,21 +242,20 @@ class KKT_NN():
         Q_max = 0.8*torch.rand((512), device = self.device) +0.2
         Q_min = -Q_max
 
-        P_plus = torch.rand((512), device = self.device) * P_max
-        Q_plus = torch.rand((512), device = self.device) * Q_max
-        Q_minus = torch.rand((512), device = self.device) * Q_min
-        P_pots = torch.rand((512), device = self.device) * P_max
+        P_plus = (P_max - 0.1)*torch.rand((512), device = self.device) + 0.1
+        Q_plus = 0.1+torch.rand((512), device = self.device) * (Q_max - 0.1)
+        Q_minus = -0.1 + torch.rand((512), device = self.device) * (Q_min + 0.1)
+        P_pots = 0.0+torch.rand((512), device = self.device) * (P_max - 0.0)
 
-        P_max = torch.ones((512), device = self.device)*0.3
-        Q_max = torch.ones((512), device = self.device)*0.3
+        #P_max = torch.ones((512), device = self.device)*0.3
+        #Q_max = torch.ones((512), device = self.device)*0.3
         Q_min = -Q_max
 
-        P_plus = torch.ones((512), device = self.device)*0.2
-        Q_plus = torch.ones((512), device = self.device)*0.15
-        Q_minus = torch.ones((512), device = self.device) * -0.15
+        #P_plus = torch.ones((512), device = self.device)*0.2
+        #Q_plus = torch.ones((512), device = self.device)*0.15
+        #Q_minus = torch.ones((512), device = self.device) * -0.15
         #Q_minus = -Q_plus
-        P_pots = torch.rand((512), device = self.device) * P_max
-        actions = 2.0 * torch.rand((512, 2), device = self.device) -1.0
+        actions = torch.tensor([1.0, 2.0], device = self.device) * torch.rand((512, 2), device = self.device) + torch.tensor([0.0, -1.0], device = self.device)
 
         
         def closure():
