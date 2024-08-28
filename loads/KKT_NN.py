@@ -49,7 +49,7 @@ class ResidualBlock(nn.Module):
         super().__init__()
         device = torch.device("cuda" if torch.cuda.is_available() else "mps")
         self.linear = nn.Linear(n, n).to(dtype=torch.float32, device=device)
-        self.relu = nn.LeakyReLU()
+        self.relu = nn.Tanh()
         self.ln = nn.LayerNorm(n)
         self.dropout = nn.Dropout(0.0)
 
@@ -70,21 +70,21 @@ class Net(nn.Module):
         self.mlp = nn.Sequential(
             #nn.LayerNorm(1),
 
-            nn.Linear(6, 512),
+            nn.Linear(8, 512),
             nn.LeakyReLU(),
             ResidualBlock(512),
             ResidualBlock(512),
             ResidualBlock(512),
-            nn.Linear(512, 18),
+            nn.Linear(512, 9),
         ).to(dtype=torch.float32, device=device)
 
     def forward(self, X):
         y = self.mlp(X)
 
         sol = torch.nn.functional.softmax(y[..., :-2], dim = 1)
-        lambd = torch.nn.functional.relu(y[..., 4:])
+        lambd = torch.nn.functional.relu(y[..., 2:])
 
-        return y[..., :4], lambd
+        return y[..., :2], lambd
 
 
 class KKT_NN():
@@ -112,7 +112,7 @@ class KKT_NN():
         self.coeffs[1] = 1.0
         self.initial_losses = None
         self.previous_losses = None
-        self.G_val = torch.Tensor(
+        self.G_val_mult = torch.Tensor(
                 [
                     [-1, 0, 0, 0],
                     [1, 0, 0 ,0],
@@ -131,11 +131,17 @@ class KKT_NN():
                 ]
             ).to(dtype=torch.float32, device=device)
         
-        self.h_val = torch.tensor(
+        self.h_val_mult = torch.tensor(
                 [
                     [-0.0000, 0.3000, 0.0400, 0.3000, 0.3000, 0.6000, 0.6000, -0.0000, 0.5000,
         0.1100, 0.5000, 0.5000, 1.2000, 1.2000]
                 ],
+            ).to(dtype=torch.float32, device=device)
+        
+        self.G_val = torch.Tensor(
+                [
+                    [-1, 0], [1, 0], [1, 0], [0, -1], [0, 1], [0, 1], [0, -1]
+                ]
             ).to(dtype=torch.float32, device=device)
     def loss_grad_std_wn(self, loss, net):
         with torch.no_grad():
@@ -175,17 +181,24 @@ class KKT_NN():
 
             return coeff_rel_improv
 
-    def kkt_loss(self, actions, G_val, h_val, sol, lambd,):
+    def kkt_loss(self, actions, P_pots, P_max, Q_max, P_plus, Q_plus, Q_minus, sol, lambd):
 
         beta = torch.bernoulli(torch.tensor(self.beta_p))
+        G_val =self.G_val.repeat(actions.shape[0], 1, 1)
+        
+        tau1 = (Q_plus - Q_max)/(P_max - P_plus)
+        tau2 = (Q_minus + Q_max)/(P_max - P_plus)
 
-        h_val =self.h_val.repeat(actions.shape[0], 1)
-
-        h_val[..., 2] = P_pots[..., 0]
-        h_val[..., 9] = P_pots[..., 1]
-        grad_g = torch.matmul(self.G_val.T, lambd.T).T
+        rho1 = Q_max - tau1*P_plus
+        rho2 = -Q_max - tau2*P_plus
+        h_val =torch.stack((torch.zeros(512, device = self.device), P_max, P_pots, Q_max, Q_max, rho1, -rho2), 1)
+        G_val[..., -2 , 0] = -tau1
+        G_val[..., -1 , 0] = tau2
+        #grad_g = torch.matmul(G_val.T, lambd.T).T
+        grad_g = torch.bmm(lambd.unsqueeze(1), G_val).squeeze()
         grad_f = sol - actions
-        g_ineq = torch.matmul(self.G_val, sol.T).T - h_val
+        #g_ineq = torch.matmul(G_val, sol.T).T - h_val
+        g_ineq = torch.bmm(G_val, sol.unsqueeze(2)).squeeze() - h_val
         dual_feasibility = torch.relu(-lambd)
         stationarity = grad_f + grad_g
         complementary = lambd * g_ineq
@@ -220,26 +233,33 @@ class KKT_NN():
         
         #actions = X[..., :4]
         #P_pots = X[...,4:]
-        actions = torch.tensor([0.0, 0.0, -0.3, -0.5], device = self.device) + torch.rand((512, 4), device = self.device) * torch.tensor([0.3, 0.5, 0.6, 1.0], device = self.device)
-        P_pots = torch.rand((512, 2), device = self.device) * torch.tensor([0.3, 0.5], device = self.device)
+        #actions = torch.tensor([0.0, 0.0, -0.3, -0.5], device = self.device) + torch.rand((512, 4), device = self.device) * torch.tensor([0.3, 0.5, 0.6, 1.0], device = self.device)
         
-        P_max = torch.rand((512,1), device = self.device)
-        Q_max = torch.rand((512,1), device = self.device)
+        
+        P_max = 0.8*torch.rand((512), device = self.device) +0.2
+        Q_max = 0.8*torch.rand((512), device = self.device) +0.2
         Q_min = -Q_max
 
-        P_plus = torch.rand((512,1), device = self.device) * P_max
-        Q_plus = torch.rand((512,1), device = self.device) * Q_max
-        Q_minus = torch.rand((512,1), device = self.device) * Q_min
-        tau1 = (Q_plus - Q_max)/(P_max - P_plus)
-        tau2 = (Q_minus - Q_min)/(P_max - P_plus)
+        P_plus = torch.rand((512), device = self.device) * P_max
+        Q_plus = torch.rand((512), device = self.device) * Q_max
+        Q_minus = torch.rand((512), device = self.device) * Q_min
+        P_pots = torch.rand((512), device = self.device) * P_max
 
-        rho1 = Q_max - tau1*P_plus
-        rho2 = Q_minus - tau2*P_plus
+        P_max = torch.ones((512), device = self.device)*0.3
+        Q_max = torch.ones((512), device = self.device)*0.3
+        Q_min = -Q_max
+
+        P_plus = torch.ones((512), device = self.device)*0.2
+        Q_plus = torch.ones((512), device = self.device)*0.15
+        Q_minus = torch.ones((512), device = self.device) * -0.15
+        #Q_minus = -Q_plus
+        P_pots = torch.rand((512), device = self.device) * P_max
+        actions = 2.0 * torch.rand((512, 2), device = self.device) -1.0
 
         
         def closure():
-            sol, lambd = self.net(torch.cat([actions, P_pots], 1))
-            kkt_loss, stationarity, g_ineq, complementary, feasability = self.kkt_loss(actions, P_pots, sol, lambd
+            sol, lambd = self.net(torch.cat([actions, P_pots.unsqueeze(1), P_max.unsqueeze(1), Q_max.unsqueeze(1), P_plus.unsqueeze(1), Q_plus.unsqueeze(1), Q_minus.unsqueeze(1)], 1))
+            kkt_loss, stationarity, g_ineq, complementary, feasability = self.kkt_loss(actions.detach(), P_pots.detach(), P_max.detach(), Q_max.detach(), P_plus.detach(), Q_plus.detach(), Q_minus.detach(), sol, lambd
             )
 
             self.optimizer.zero_grad()
@@ -293,7 +313,7 @@ class KKT_NN():
         with torch.no_grad():
             sol, _ = self.net(X)
             val_loss = nn.functional.mse_loss(sol, y)
-            val_r2 = R2Score(4).to(self.device)(sol, y)
+            val_r2 = R2Score(2).to(self.device)(sol, y)
             #err =  torch.abs(-torch.log(X + sol).sum(1) + torch.log(X + y).sum(1))
             #err = 100*err/torch.abs(torch.log(X + y).sum(1))
             self.tb_logger.add_scalar("Loss/Val", val_loss, self.n_iter)
@@ -325,8 +345,8 @@ class Samples(Dataset):
 
     def __getitem__(self, idx):
         X, y = self.samples[idx]
-        X = np.array(X)[..., [0,1,2,3,6,7]]
-        y = np.array(y)[..., [0,1,3,4]]
+        X = np.array(X)
+        y = np.array(y)
         if self.transform:
             X = self.transform(X)
             y = self.transform(y)
