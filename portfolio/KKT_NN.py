@@ -50,14 +50,14 @@ class ResidualBlock(nn.Module):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.linear = nn.Linear(n, n).to(dtype=torch.float32, device=device)
         self.relu = nn.LeakyReLU()
-        self.ln = nn.LayerNorm(n)
+        self.ln = nn.BatchNorm1d(n)
         self.dropout = nn.Dropout(0.0)
 
     def forward(self, X):
         identity = X
         y = self.relu(self.linear(self.dropout(self.ln(X))) + identity)
 
-        return y
+        return self.relu(self.linear(X) + identity)
 class Net(nn.Module):
     def softmax(self, input, t=1e-2):
         ex = torch.exp(input / t - torch.max(input / t, 1)[0].unsqueeze(1))
@@ -104,7 +104,7 @@ class KKT_NN():
         self.es= EarlyStopper(patience = 10000)
         self.plateau = False
         self.automatic_optimization = False
-        self.optimizer = optim.Adam(self.net.parameters(), lr=1e-5)
+        self.optimizer = optim.RAdam(self.net.parameters(), lr=1e-5)
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.99999)
         self.coeffs = torch.ones(4, device=self.device, dtype=torch.float32)
         self.coeffs[0] = 1.0
@@ -190,8 +190,8 @@ class KKT_NN():
         if self.previous_losses is None:
             self.previous_losses = losses
 
-        #self.coeffs = self.alpha*(beta*self.coeffs + (1-beta)*self.coeff_rel_improv(losses, self.initial_losses)) + (1-self.alpha)*self.coeff_rel_improv(losses, self.previous_losses)
-        #self.coeffs = self.coeffs / (self.coeffs[0] + torch.finfo(torch.float32).eps)
+        self.coeffs = self.alpha*(beta*self.coeffs + (1-beta)*self.coeff_rel_improv(losses, self.initial_losses)) + (1-self.alpha)*self.coeff_rel_improv(losses, self.previous_losses)
+        self.coeffs = self.coeffs / (self.coeffs[0] + torch.finfo(torch.float32).eps)
         self.previous_losses = losses
         #if loss_g_ineq < 1e-4:
             #self.coeffs[2] = 0.0
@@ -207,7 +207,7 @@ class KKT_NN():
 
     def training_step(self, S, mu, X, y):
 
-        
+        self.net.train()
         A = torch.rand((512, 20, 20)).to(dtype=torch.float32, device=self.device)
         S= torch.tensor(S.to_numpy()).flatten().repeat(512,1).to(device = self.device, dtype= torch.float32)
         mu= torch.tensor(mu.to_numpy()).repeat(512,1).to(device = self.device, dtype= torch.float32)
