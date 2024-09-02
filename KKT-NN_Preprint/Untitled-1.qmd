@@ -1,7 +1,0 @@
----
-title: "KKT-Informed Neural Networks: A parallel and scalable solver for Parametric Convex Optimization Problems"
-format: 
-    arxiv-pdf:
-        keep-tex: true    
----
-

@@ -55,7 +55,7 @@ class ResidualBlock(nn.Module):
 
     def forward(self, X):
         identity = X
-        y = self.relu(self.linear(self.dropout(self.ln(X))) + identity)
+        #y = self.relu(self.linear(self.dropout(self.ln(X))) + identity)
 
         return self.relu(self.linear(X)+identity)
 class Net(nn.Module):
@@ -66,13 +66,12 @@ class Net(nn.Module):
         self.mlp = nn.Sequential(
             #nn.BatchNorm1d(8),
 
-            nn.Linear(7, 512),
+            nn.Linear(7, 1024),
             nn.LeakyReLU(),
-            ResidualBlock(512),
-            ResidualBlock(512),
-            ResidualBlock(512),
-            ResidualBlock(512),
-            nn.Linear(512, 9),
+            ResidualBlock(1024),
+            ResidualBlock(1024),
+            ResidualBlock(1024),
+            nn.Linear(1024, 9),
         ).to(dtype=torch.float32, device=device)
 
     def forward(self, X):
@@ -100,7 +99,7 @@ class KKT_NN():
         self.es= EarlyStopper(patience = 5000)
         self.plateau = False
         self.terminated = False
-        self.optimizer = optim.RAdam(self.net.parameters(), lr=1E-5)
+        self.optimizer = optim.Adam(self.net.parameters(), lr=1E-5)
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.99999)
         self.coeffs = torch.ones(3, device=self.device, dtype=torch.float32)
         self.initial_losses = None
@@ -159,7 +158,7 @@ class KKT_NN():
 
         rho1 = Q_max - tau1*P_plus
         rho2 = -Q_max - tau2*P_plus
-        h_val =torch.stack((torch.zeros(512, device = self.device), P_max, P_pots, Q_max, Q_max, rho1, -rho2), 1)
+        h_val =torch.stack((torch.zeros(128, device = self.device, dtype=torch.float32), P_max, P_pots, Q_max, Q_max, rho1, -rho2), 1)
         G_val[..., -2 , 0] = -tau1
         G_val[..., -1 , 0] = tau2
         grad_g = torch.bmm(lambd.unsqueeze(1), G_val).squeeze()
@@ -182,8 +181,8 @@ class KKT_NN():
             self.previous_losses = losses
 
         with torch.no_grad():
-            self.coeffs = self.alpha*(beta*self.coeffs + (1-beta)*self.coeff_rel_improv(losses, self.initial_losses)) + (1-self.alpha)*self.coeff_rel_improv(losses, self.previous_losses)
-            self.coeffs = self.coeffs / (self.coeffs[0] + torch.finfo(torch.float32).eps)
+            #self.coeffs = self.alpha*(beta*self.coeffs + (1-beta)*self.coeff_rel_improv(losses, self.initial_losses)) + (1-self.alpha)*self.coeff_rel_improv(losses, self.previous_losses)
+            #self.coeffs = self.coeffs / (self.coeffs[0] + torch.finfo(torch.float32).eps)
             
             self.previous_losses = losses
 
@@ -198,13 +197,13 @@ class KKT_NN():
         self.net.train()
         
         
-        P_max = 0.8*torch.rand((512), device = self.device) +0.2
-        Q_max = 0.8*torch.rand((512), device = self.device) +0.2
+        P_max = 0.8*torch.rand((128), device = self.device, dtype=torch.float32) +0.2
+        Q_max = 0.8*torch.rand((128), device = self.device, dtype=torch.float32) +0.2
 
-        P_plus = (P_max - 0.0)*torch.rand((512), device = self.device) + 0.0
-        Q_plus = 0.0+torch.rand((512), device = self.device) * (Q_max - 0.0)
-        P_pots = 0.0+torch.rand((512), device = self.device) * (P_max - 0.0)
-        actions = torch.tensor([1.0, 2.0], device = self.device) * torch.rand((512, 2), device = self.device) + torch.tensor([0.0, -1.0], device = self.device)
+        P_plus = (P_max - 0.0)*torch.rand((128), device = self.device, dtype=torch.float32) + 0.0
+        Q_plus = 0.0+torch.rand((128), device = self.device, dtype=torch.float32) * (Q_max - 0.0)
+        P_pots = 0.0+torch.rand((128), device = self.device, dtype=torch.float32) * (P_max - 0.0)
+        actions = torch.tensor([1.0, 2.0], device = self.device, dtype=torch.float32) * torch.rand((128, 2), device = self.device, dtype=torch.float32) + torch.tensor([0.0, -1.0], device = self.device, dtype=torch.float32)
 
         
         def closure():
@@ -214,6 +213,7 @@ class KKT_NN():
 
             self.optimizer.zero_grad()
             kkt_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.0)
             self.tb_logger.add_scalars('run',
                 {
                     "train_loss": kkt_loss,
@@ -242,7 +242,7 @@ class KKT_NN():
             X = X.to(self.device)
        
             y = y.to(self.device)
-            sol, _ = self.net(X)
+            sol, lambd = self.net(X)
             val_loss = nn.functional.mse_loss(sol, y)
             val_r2 = R2Score(2).to(self.device)(sol, y)
             self.tb_logger.add_scalar("Loss/Val", val_loss, self.n_iter)
@@ -250,6 +250,7 @@ class KKT_NN():
             self.tb_logger.add_scalar("Loss/Val", val_loss, self.n_iter)
             self.tb_logger.add_scalar("Sol/True", y[-1,0],  self.n_iter)
             self.tb_logger.add_scalar("Sol/Pred", sol[-1,0],  self.n_iter)
+            self.tb_logger.add_scalar("Lambd", lambd[-1,0],  self.n_iter)
             self.tb_logger.flush()
 
     def test_step(self, batch, batch_idx):
@@ -284,7 +285,7 @@ class Samples(Dataset):
 if __name__ == "__main__":
     
     dataset = Samples()
-    loader = DataLoader(dataset, 512, shuffle=True, num_workers=0)
+    loader = DataLoader(dataset, 512, shuffle=False, num_workers=0)
     model = KKT_NN()
     terminated = False
     pbar = tqdm()

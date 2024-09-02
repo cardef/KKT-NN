@@ -104,7 +104,7 @@ class KKT_NN():
         self.es= EarlyStopper(patience = 10000)
         self.plateau = False
         self.automatic_optimization = False
-        self.optimizer = optim.RAdam(self.net.parameters(), lr=1e-5)
+        self.optimizer = optim.SGD(self.net.parameters(), lr=1e-5, momentum=0.5)
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.99999)
         self.coeffs = torch.ones(4, device=self.device, dtype=torch.float32)
         self.coeffs[0] = 1.0
