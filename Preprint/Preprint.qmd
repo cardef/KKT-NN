@@ -1,5 +1,6 @@
 ---
-title: "Demo arXiv template"
+title: "KKT-Informed Neural Network"
+subtitle: "A parallel solver fot parametric convex optimization problem"
 author: Carmine Delle Femine
 format:
     arxiv-pdf:
@@ -13,9 +14,9 @@ abstract: |
 
 # Introduction
 
-# Proposed method
+# Background
 
-Consider a convex parametric optimization problem in the standard form:
+Consider a parametric convex optimization problem in the standard form:
 
 $$
 \begin{aligned}
@@ -27,12 +28,20 @@ $$
 
 where $x \in \mathcal{D} \subseteq\mathbb{R}^n$ is the optimization variable; $\theta \in \mathcal{D}_\theta \subseteq \mathbb{R}^k$ are the parameters defining the problem; $f: \mathcal{D}_f \subseteq\mathbb{R}^n \times \mathbb{R}^k \to \mathbb{R}$ is the convex cost function; $g_i: \mathcal{D}_{g_i} \subseteq\mathbb{R}^n \times \mathbb{R}^k \to \mathbb{R}$ are the convex inequality constraints, $A: \mathcal{D}_\theta \to \mathbb{R}^{p \times n}$ and $b: \mathcal{D}_\theta \to \mathbb{R}^{p}$ defines the affine equality constraints and $\mathcal{D} = \bigcap_{i=1}^{m} \mathcal{D}_{g_i} \cap \mathcal{D}_{f}$ is the domain of the optimization problem.
 
-Assume that $g_i$ satisfies Slater's condition. $x^* \in \mathcal{D}$ is optimal if and only if there are $\lambda$ and $\nu$ that, with $x^*$, satisy the Karush-Kuhn-Tucker conditions (KKT):
+Assume differentiable cost and constraints functions and that $g_i$ satisfies Slater's condition. Given a set of parameters $\theta$, $x^* \in \mathcal{D}$ is optimal if and only if there are $\lambda^*$ and $\nu^*$ that, with $x^*$, satisy the Karush-Kuhn-Tucker conditions (KKT):
 
-$$
-$$
+\begin{align}
+    A(\theta) x^* - b(\theta) = 0&\\
+    g_i(x^*, \theta) \leq 0& \quad i=1,\dots, m\\
+    \lambda_i^* \geq 0& \quad i=1,\dots, m\\
+    \lambda_i^* g_i(x^*, \theta) = 0& \quad i=1,\dots, m{Compl}\\
+    \nabla_{x^*} f(x^*, \theta) + \sum\nolimits_{i=1}^m \lambda^*_i\nabla_{x^*} g_i(x^*, \theta) + A^T\nu^* = 0 &
+\end{align}
 
-# Case of study
+# Proposed method
+
+
+# Case study
 
 ## Problem description
 
