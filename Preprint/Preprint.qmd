@@ -1,13 +1,28 @@
 ---
 title: "KKT-Informed Neural Network"
-subtitle: "A parallel solver fot parametric convex optimization problem"
-author: Carmine Delle Femine
+subtitle: "A parallel solver for parametric convex optimization problem"
+author: 
+    name: Carmine Delle Femine
+    email: cdellefemine@vicomtech.org
+    affiliation:
+        name: Vicomtech Foundation
+        department: Department of Data Intelligence for Energy and Industrial Processes
+        address: Paseo Mikeletegi 57
+        city: Donostia-San Sebastián
+        region: Guipuzkoa
+        state: Spain
+        postal-code: 20009
+        isni: 0000000460222780
+        ror: https://ror.org/0023sah13
+keywords:
+    - Optimization
 format:
     arxiv-pdf:
         keep-tex: true
         include-in-header:
             - text: |
                 \usepackage{amsmath}
+                \usepackage{tikz}
 abstract: |
   This is the abstract  
 ---
@@ -30,19 +45,95 @@ where $x \in \mathcal{D} \subseteq\mathbb{R}^n$ is the optimization variable; $\
 
 Assume differentiable cost and constraints functions and that $g_i$ satisfies Slater's condition. Given a set of parameters $\theta$, $x^* \in \mathcal{D}$ is optimal if and only if there are $\lambda^*$ and $\nu^*$ that, with $x^*$, satisy the Karush-Kuhn-Tucker conditions (KKT):
 
+```{=tex}
 \begin{align}
     A(\theta) x^* - b(\theta) = 0&\\
     g_i(x^*, \theta) \leq 0& \quad i=1,\dots, m\\
     \lambda_i^* \geq 0& \quad i=1,\dots, m\\
-    \lambda_i^* g_i(x^*, \theta) = 0& \quad i=1,\dots, m{Compl}\\
+    \lambda_i^* g_i(x^*, \theta) = 0& \quad i=1,\dots, m\\
     \nabla_{x^*} f(x^*, \theta) + \sum\nolimits_{i=1}^m \lambda^*_i\nabla_{x^*} g_i(x^*, \theta) + A^T\nu^* = 0 &
 \end{align}
-
+```
 # Proposed method
 
+KKT-Informed Neural Network (KINN) builds upon the principles of Physics-Informed Neural Networks (PINNs), incorporating mathematical conditions of the Karush-Kuhn-Tucker (KKT) conditions directly into the neural architecture. This integration facilitates a disciplined learning process where the network not only predicts optimization variables but also ensures these predictions are compliant with KKT conditions, essential for guaranteeing the optimality of solutions in convex optimization under exam.
 
+Network architecture is a MLP designed to take problem parameters $\theta$ as input and predict $x^*$, $\lambda^*$, $\nu^*$. A ReLU function is placed at the end of the branch predicting $\lambda^*$ to ensure its feasability.
+
+```{=tex}
+\begin{align}
+\hat{x}, \hat{\lambda}, \hat{\nu} &= \textrm{KINN}(\theta)\\
+\hat{\lambda} &\in \mathbb{R}⁰_+
+\end{align}
+```
+
+Loss function is so defined:
+
+$$
+\mathcal{L} = \mathcal{L}_S + \sum_{i=1}^m\mathcal{L}_{I,i} + \mathcal{L}_E  + \sum_{i=1}^m\mathcal{L}_{C,i} 
+$$
+where:
+
+```{=tex}
+\begin{align}
+    \mathcal{L}_S =& \|\nabla_{\hat{x}} f(\hat{x}, \theta) + \sum\nolimits_{i=1}^m \hat{\lambda}_i\nabla_{\hat{x}} g_i(\hat{x}, \theta) + A^T\hat{\nu}\|\\ 
+    \mathcal{L}_{I,i}  =& \|\max(0, g_i(\hat{x}, \theta))\|\\
+    \mathcal{L}_E =& \|A(\theta) \hat{x} - b(\theta)\|\\
+    \mathcal{L}_{C,i}  =& \|\hat{\lambda}_i g_i(\hat{x}, \theta)\|\\
+\end{align}
+```
 # Case study
+Let us take such a problem as a test case for this approach:
 
+You have a renewable energy generator in a power grid, whose active and reactive power injections are controllable. The set of injection points $(P,Q)$ is limited by physical constraints, however, so the set-points $(a_P, a_Q)$ must be projected onto that set.
+
+The feasibile set $\mathcal{D}$ is:
+
+\begin{equation}
+\mathcal{D} = \{(P, Q) \in \mathbb{R}² | \underline{P}_g \leq P \leq P^{\textrm{(max)}}_{g,t}\}
+\end{equation}
+\begin{center}
+\begin{tikzpicture}
+
+% Assi
+
+
+% Area grigia
+\fill[gray!20] (0,-3) rectangle (5,3);
+\fill[gray!20] (5,-2) rectangle (6,2);
+\fill[gray!20] (5,2) -- (6,2) -- (5,3) -- cycle;
+\fill[gray!20] (5,-2) -- (6,-2) -- (5,-3) -- cycle;
+% Linee tratteggiate orizzontali per Q
+\draw (0,3) -- (5,3);
+\draw[dashed] (0,2) -- (6,2);
+\draw[dashed] (0,-2) -- (6,-2);
+\draw (0,-3) -- (5,-3);
+
+% Linee tratteggiate verticali per P
+\draw[dashed] (5,3) -- (5,-3);
+
+% Etichette per Q
+\node at (-0.3,3) {$Q_g$};
+\node at (-0.5,2) {$Q_g^+$};
+\node at (-0.3,-2) {$Q_g⁻$};
+\node at (-0.5,-3) {$\underline{Q}_g$};
+
+% Etichette per P
+\node at (5,0.3) {$P_g^+$};
+\node at (6,-0.3) {$\overline{P}_g$};
+
+% Linee inclinate e relative etichette
+\draw (5,3) -- (6,2);
+\draw (5,-3) -- (6,-2);
+
+\draw (6,1.5) -- (6,-2);
+\node at (6.7,2) {$\tau_g^{(1)} P + \rho_g^{(1)}$};
+\node at (6.7,-2) {$\tau_g^{(2)} P + \rho_g^{(2)}$};
+
+\draw[->] (-0.5,0) -- (6.5,0) node[right] {$P$};
+\draw[->] (0,-3.5) -- (0,3.5) node[above] {$Q$};
+\end{tikzpicture}
+\end{center}
 ## Problem description
 
 ## Experimental results
