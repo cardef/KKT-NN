@@ -166,7 +166,7 @@ class KKT_NN():
         grad_g = torch.bmm(lambd.unsqueeze(1), G_val).squeeze()
         grad_f = sol - actions
         g_ineq = torch.bmm(G_val, sol.unsqueeze(2)).squeeze() - h_val
-        stationarity = grad_f + grad_g
+        stationarity = grad_f + 0*grad_g
         complementary = lambd * g_ineq
         loss_stationarity = torch.norm(stationarity)
         loss_g_ineq = torch.norm(torch.relu(g_ineq))
@@ -207,12 +207,11 @@ class KKT_NN():
         Q_plus = 0.1+torch.rand((128), device = self.device, dtype=torch.float64) * (0.9*Q_max - 0.1)
         P_pots = 0.0+torch.rand((128), device = self.device, dtype=torch.float64) * (P_max - 0.0)
 
-        P_max = torch.rand((128), device = self.device, dtype=torch.float64)
-        Q_max = torch.rand((128), device = self.device, dtype=torch.float64)
+        P_max = torch.ones((128), device = self.device, dtype=torch.float64)*0.5
+        Q_max = torch.ones((128), device = self.device, dtype=torch.float64)*0.5
 
-        P_plus = torch.rand((128), device = self.device, dtype=torch.float64)
-        Q_plus = torch.rand((128), device = self.device, dtype=torch.float64)
-        P_pots = torch.rand((128), device = self.device, dtype=torch.float64)
+        P_plus = torch.ones((128), device = self.device, dtype=torch.float64)*0.3
+        Q_plus = torch.ones((128), device = self.device, dtype=torch.float64)*0.3
         actions = torch.tensor([1.0, 2.0], device = self.device, dtype=torch.float64) * torch.rand((128, 2), device = self.device, dtype=torch.float64) + torch.tensor([0.0, -1.0], device = self.device, dtype=torch.float64)
 
         
@@ -223,7 +222,7 @@ class KKT_NN():
 
             self.optimizer.zero_grad()
             kkt_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.0)
+            #torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.0)
             self.tb_logger.add_scalars('run',
                 {
                     "train_loss": kkt_loss,
