@@ -151,7 +151,7 @@
   \apptocmd{\@title}{\par {\large #1 \par}}{}{}
 }
 \makeatother
-\subtitle{A parallel solver for parametric convex optimization problem}
+\subtitle{A Parallel Solver for Parametric Convex Optimization Problem}
 \def\asep{\\\\\\ } % default: all authors on same column
 \author{\textbf{Carmine Delle Femine}\\Department of Data Intelligence
 for Energy and Industrial Processes\\Vicomtech Foundation\\Donostia-San
@@ -220,13 +220,13 @@ also ensures these predictions are compliant with KKT conditions,
 essential for guaranteeing the optimality of solutions in convex
 optimization under exam.
 
-Network architecture is a MLP designed to take problem parameters
-\(\theta\) as input and predict \(x^*\), \(\lambda^*\), \(\nu^*\). A
-ReLU function is placed at the end of the branch predicting
-\(\lambda^*\) to ensure its feasability.
+Network architecture is a MLP designed to take a batch of problem
+parameters \(\Theta = \{\theta^{(i)}\}_{i=1}^N\) as input and predict
+\(x^*\), \(\lambda^*\), \(\nu^*\). A ReLU function is placed at the end
+of the branch predicting \(\lambda^*\) to ensure its feasability.
 
 \begin{align}
-\hat{x}, \hat{\lambda}, \hat{\nu} &= \textrm{KINN}(\theta)\\
+(\hat{x}, \hat{\lambda}, \hat{\nu}) &= \textrm{KINN}(\Theta)\\
 \hat{\lambda} &\in \mathbb{R}⁰_+
 \end{align}
 
@@ -237,26 +237,44 @@ Loss function is so defined:
 \] where:
 
 \begin{align}
-    \mathcal{L}_S =& \|\nabla_{\hat{x}} f(\hat{x}, \theta) + \sum\nolimits_{i=1}^m \hat{\lambda}_i\nabla_{\hat{x}} g_i(\hat{x}, \theta) + A^T\hat{\nu}\|\\ 
-    \mathcal{L}_{I,i}  =& \|\max(0, g_i(\hat{x}, \theta))\|\\
-    \mathcal{L}_E =& \|A(\theta) \hat{x} - b(\theta)\|\\
-    \mathcal{L}_{C,i}  =& \|\hat{\lambda}_i g_i(\hat{x}, \theta)\|\\
+    \mathcal{L}_S =& \|\nabla_{\hat{x}} f(\hat{x}, \theta) + \sum\nolimits_{i=1}^m \hat{\lambda}_i\nabla_{\hat{x}} g_i(\hat{x}, \theta) + A^T\hat{\nu}\|_2\\ 
+    \mathcal{L}_{I,i}  =& \|\max(0, g_i(\hat{x}, \theta))\|_2\\
+    \mathcal{L}_E =& \|A(\theta) \hat{x} - b(\theta)\|_2\\
+    \mathcal{L}_{C,i}  =& \|\hat{\lambda}_i g_i(\hat{x}, \theta)\|_2\\
 \end{align}
 
 \section{Case study}\label{case-study}
 
 Let us take such a problem as a test case for this approach:
 
-You have a renewable energy generator in a power grid, whose active and
+We have a renewable energy generator in a power grid, whose active and
 reactive power injections are controllable. The set of injection points
-\((P,Q)\) is limited by physical constraints, however, so the set-points
+\((P,Q)\) is limited by physical constraints, so the set-points
 \((a_P, a_Q)\) must be projected onto that set.
 
-The feasibile set \(\mathcal{D}\) is:
+\subsection{Problem description}\label{problem-description}
+
+The feasibile set \(\mathcal{D}\) is defined by the physical parameters
+of the generator
+\(\overline{P}_g, \underline{P}_g, P⁺_g, \overline{Q}_g, \underline{Q}_g, Q⁺_g, Q⁻_g\)
+, characterizing the minimum and maximum possible values and the
+relationships between active and reactive power, and the dynamic value
+\(P^{\textrm{(max)}}_{g,t}\) which indicates the maximum power that can
+be generated at that time given the external conditions (e.g.~wind
+speed, solar radiation, etc.):
 
 \begin{equation}
-\mathcal{D} = \{(P, Q) \in \mathbb{R}² | \underline{P}_g \leq P \leq P^{\textrm{(max)}}_{g,t}\}
+\mathcal{D} = \{(P, Q) \in \mathbb{R}² | \underline{P}_g \leq P \leq P^{\textrm{(max)}}_{g,t}, Q_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
 \end{equation}
+
+where:
+
+\begin{align}
+    \tau^{(1)}_g &= \frac{Q_g⁺ - \overline{Q}_g}{\overline{P_g} - P_g⁺}\\
+    \rho^{(1)}_g &= \overline{Q}_g - \tau^{(1)}_gP_g⁺\\
+    \tau^{(2)}_g &= \frac{Q_g^- - \underline{Q}_g}{\overline{P_g} - P_g⁺}\\
+    \rho^{(2)}_g &= \underline{Q}_g - \tau^{(2)}_gP_g⁺  \\
+\end{align}
 
 \begin{center}
 \begin{tikzpicture}
@@ -301,9 +319,118 @@ The feasibile set \(\mathcal{D}\) is:
 \end{tikzpicture}
 \end{center}
 
-\subsection{Problem description}\label{problem-description}
+The problem could be stated in standard form as:
+
+\[
+\begin{aligned}
+\min_{x \in \mathcal{D} \subseteq\mathbb{R}^2} \quad &\frac{1}{2}\|a - x\|^{2}_{2} \\
+\textrm{s.t.}\quad & G x - h \leq 0\\
+\end{aligned}
+\]
+
+with \(a = (a_P, a_Q)\), \(x = (P, Q)\) and:
+
+\begin{equation}
+G = \begin{pmatrix}
+-1 & 1 & 1 & 0 & 0 & -\tau^{(1)}_g & \tau^{(2)}_g\\
+0 & 0 & 0 & -1 & 1 & 1 & 1
+\end{pmatrix}^T
+\end{equation}
+
+\begin{equation}
+h = \begin{pmatrix}
+-\underline{P}_g & \overline{P}_g & P^{\textrm{(max)}}_{g,t} & -\underline{Q}_g & \overline{Q}_g & \rho^{(1)}_g & -\rho^{(2)}_g
+\end{pmatrix}^T
+\end{equation}
+
+With associated KKT conditions: \begin{align}
+    G\hat{x} - h \leq 0&\\
+    \lambda_i^* \geq 0& \quad i=1,\dots, 7\\
+    G^T\hat\lambda = 0&\\
+    (a-\hat{x}) + G^T\hat\lambda  = 0 &
+\end{align}
 
 \subsection{Experimental results}\label{experimental-results}
+
+The problem described has a two-dimensional optimization variable, ten
+scalar parameters and seven constraints:
+
+\begin{equation}
+ (X, \Lambda) = \mathrm{KINN}(\Theta)
+\end{equation}
+
+with: \begin{align}
+\Theta \in \mathbb{R}^{N \times 10}, \quad&\Theta_{i} = (a_P^{(i)}, a_Q^{(i)},\overline{P}_g^{(i)}, \underline{P}_g^{(i)}, P_g^{+^{(i)}}, \overline{Q}_g^{(i)}, \underline{Q}_g^{(i)}, Q_g^{+^{(i)}}, Q_g^{-^{(i)}}, P^{\textrm{(max)}^{(i)}}_{g,t})\\
+X \in \mathbb{R}^{N \times 2}, \quad&X_{i} = (P^{(i)}, Q^{(i)})\\
+\Lambda \in \mathbb{R}_+^{0^{N \times 7}}, \quad&\Lambda_{i} = \lambda^{(i)}
+\end{align}
+
+At each training step, a random batch of parameters \(\Theta\) was
+sampled:
+
+\begin{align}
+a_P^{(i)} &\sim U(0~\mathrm{p.u}., 1~\mathrm{p.u.})\\
+a_Q^{(i)} &\sim U(-1~\mathrm{p.u}., 1~\mathrm{p.u.})\\
+\overline{P}_g^{(i)} &\sim U(0.2~\mathrm{p.u}., 0.8~\mathrm{p.u.})\\
+P_g^{+^{(i)}} &\sim U(0~\mathrm{p.u}., \overline{P}_g^{(i)})\\
+\overline{Q}_g^{(i)} &\sim U(0.2~\mathrm{p.u}., 0.8~\mathrm{p.u.})\\
+Q_g^{+^{(i)}} &\sim U(0~\mathrm{p.u}., \overline{Q}_g^{(i)})\\
+P^{\textrm{(max)}^{(i)}}_{g,t} &\sim U(0~\mathrm{p.u}., \overline{P}_g^{(i)})
+\end{align}
+
+Models parameters were update to minimize the following loss function:
+
+\[
+\mathcal{L} = \frac{1}{N}\sum_{i=1}^N(\mathcal{L}_S^{(i)} + \mathcal{L}_{I}^{(i)}  + \mathcal{L}_{C}^{(i)})
+\] where:
+
+\begin{align}
+    \mathcal{L}_S^{(i)} =& \|(a^{(i)}-\hat{x}^{(i)}) + G^{(i)^{T}}\hat\lambda^{(i)}\|_2\\ 
+    \mathcal{L}_{I}^{(i)}  =& \|\max(0, G^{(i)}\hat{x} - h^{(i)})\|_2\\
+    \mathcal{L}_{C}^{(i)}  =& \|G^{(i)^{T}}\hat\lambda^{(i)}\|_2\\
+\end{align}
+
+\subsubsection{Training}\label{training}
+
+\begin{figure}
+
+\centering{
+
+\includegraphics{Preprint_files/figure-pdf/fig-polar-output-1.pdf}
+
+}
+
+\caption{\label{fig-polar}A line plot on a polar axis}
+
+\end{figure}%
+
+\subsubsection{Evaluation}\label{evaluation}
+
+\begin{figure}
+
+\centering{
+
+\includegraphics{Preprint_files/figure-pdf/fig-polar2-output-1.pdf}
+
+}
+
+\caption{\label{fig-polar2}A line plot on a polar axis}
+
+\end{figure}%
+
+\begin{figure}
+
+\centering{
+
+\includegraphics{Preprint_files/figure-pdf/fig-polar1-output-1.pdf}
+
+}
+
+\caption{\label{fig-polar1}A line plot on a polar axis}
+
+\end{figure}%
+
+\subsubsection{Comparison}\label{comparison}
 
 \section{Conclusions}\label{conclusions}
 

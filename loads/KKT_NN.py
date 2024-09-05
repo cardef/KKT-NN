@@ -4,6 +4,7 @@ import numpy as np
 from tqdm import tqdm
 from pypfopt.expected_returns import mean_historical_return
 from pypfopt.risk_models import CovarianceShrinkage
+from datetime import datetime
 import torch
 from torch import (
     nn,
@@ -47,8 +48,8 @@ class ResidualBlock(nn.Module):
 
     def __init__(self, n):
         super().__init__()
-        device = torch.device("cuda" if torch.cuda.is_available() else "mps")
-        self.linear = nn.Linear(n, n).to(dtype=torch.float32, device=device)
+        device = torch.device("cpu" if torch.cuda.is_available() else "mps")
+        self.linear = nn.Linear(n, n).to(dtype=torch.float64, device=device)
         self.relu = nn.LeakyReLU()
         self.ln = nn.BatchNorm1d(n)
         self.dropout = nn.Dropout(0.1)
@@ -62,7 +63,7 @@ class Net(nn.Module):
 
     def __init__(self):
         super().__init__()
-        device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+        device = torch.device("cpu" if torch.cuda.is_available() else "mps")
         self.mlp = nn.Sequential(
             #nn.BatchNorm1d(8),
 
@@ -72,7 +73,7 @@ class Net(nn.Module):
             ResidualBlock(1024),
             ResidualBlock(1024),
             nn.Linear(1024, 9),
-        ).to(dtype=torch.float32, device=device)
+        ).to(dtype=torch.float64, device=device)
 
     def forward(self, X):
         y = self.mlp(X)
@@ -87,10 +88,11 @@ class KKT_NN():
 
     def __init__(self):
         super().__init__()
-        device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+        device = torch.device("cpu" if torch.cuda.is_available() else "mps")
         self.device = device
         self.net = Net()
-        self.tb_logger = SummaryWriter("loads/tb_logs")
+        current_time = datetime.now().strftime("%b%d_%H-%M-%S")
+        self.tb_logger = SummaryWriter("loads/tb_logs/" + current_time)
         self.alpha = 0.9999
         self.beta_p = 0.9999
         self.tau = 1e-1
@@ -100,8 +102,8 @@ class KKT_NN():
         self.plateau = False
         self.terminated = False
         self.optimizer = optim.Adam(self.net.parameters(), lr=1E-5)
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.99999)
-        self.coeffs = torch.ones(3, device=self.device, dtype=torch.float32)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =1.0)
+        self.coeffs = torch.zeros(3, device=self.device, dtype=torch.float64)
         self.initial_losses = None
         self.previous_losses = None
         
@@ -109,11 +111,11 @@ class KKT_NN():
                 [
                     [-1, 0], [1, 0], [1, 0], [0, -1], [0, 1], [0, 1], [0, -1]
                 ]
-            ).to(dtype=torch.float32, device=device)
+            ).to(dtype=torch.float64, device=device)
     def loss_grad_std_wn(self, loss, net):
         with torch.no_grad():
-            device = torch.device("cuda" if torch.cuda.is_available() else "mps")
-            grad_ = torch.zeros((0), dtype=torch.float32, device=device)
+            device = torch.device("cpu" if torch.cuda.is_available() else "mps")
+            grad_ = torch.zeros((0), dtype=torch.float64, device=device)
             for elem in torch.autograd.grad(loss, net.parameters(), retain_graph=True):
                 grad_ = torch.cat((grad_, elem.view(-1)))
             mean = torch.mean(grad_)
@@ -125,23 +127,23 @@ class KKT_NN():
             std = torch.pow(var, 0.5)
             zscores = diffs / std
             #kurtoses = torch.mean(torch.pow(zscores, 4.0)) - 3.0
-            return 1.0 / (torch.std(grad_) + torch.finfo(torch.float32).eps)
+            return 1.0 / (torch.std(grad_) + torch.finfo(torch.float64).eps)
 
     def coeff_rel_improv(self, losses, prev_losses):
         with torch.no_grad():
             coeff_rel_improv = 4 * torch.exp(
-                losses / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
+                losses / (self.tau * prev_losses + torch.finfo(torch.float64).eps)
                 - torch.max(
-                    losses / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
+                    losses / (self.tau * prev_losses + torch.finfo(torch.float64).eps)
                 )
             )
 
             coeff_rel_improv /= torch.sum(
                 torch.exp(
-                    losses / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
+                    losses / (self.tau * prev_losses + torch.finfo(torch.float64).eps)
                     - torch.max(
                         losses
-                        / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
+                        / (self.tau * prev_losses + torch.finfo(torch.float64).eps)
                     )
                 )
             )
@@ -158,7 +160,7 @@ class KKT_NN():
 
         rho1 = Q_max - tau1*P_plus
         rho2 = -Q_max - tau2*P_plus
-        h_val =torch.stack((torch.zeros(128, device = self.device, dtype=torch.float32), P_max, P_pots, Q_max, Q_max, rho1, -rho2), 1)
+        h_val =torch.stack((torch.zeros(128, device = self.device, dtype=torch.float64), P_max, P_pots, Q_max, Q_max, rho1, -rho2), 1)
         G_val[..., -2 , 0] = -tau1
         G_val[..., -1 , 0] = tau2
         grad_g = torch.bmm(lambd.unsqueeze(1), G_val).squeeze()
@@ -171,6 +173,7 @@ class KKT_NN():
         loss_complementary = torch.norm(complementary)
         loss_sparsity = torch.norm(sol, p=1)
 
+        self.coeffs[0] = 1.0
     
         losses = torch.stack([loss_stationarity, loss_g_ineq, loss_complementary])
         
@@ -182,7 +185,7 @@ class KKT_NN():
 
         with torch.no_grad():
             #self.coeffs = self.alpha*(beta*self.coeffs + (1-beta)*self.coeff_rel_improv(losses, self.initial_losses)) + (1-self.alpha)*self.coeff_rel_improv(losses, self.previous_losses)
-            #self.coeffs = self.coeffs / (self.coeffs[0] + torch.finfo(torch.float32).eps)
+            #self.coeffs = self.coeffs / (self.coeffs[0] + torch.finfo(torch.float64).eps)
             
             self.previous_losses = losses
 
@@ -197,13 +200,20 @@ class KKT_NN():
         self.net.train()
         
         
-        P_max = 0.8*torch.rand((128), device = self.device, dtype=torch.float32) +0.2
-        Q_max = 0.8*torch.rand((128), device = self.device, dtype=torch.float32) +0.2
+        P_max = 0.8*torch.rand((128), device = self.device, dtype=torch.float64) +0.2
+        Q_max = 0.8*torch.rand((128), device = self.device, dtype=torch.float64) +0.2
 
-        P_plus = (P_max - 0.0)*torch.rand((128), device = self.device, dtype=torch.float32) + 0.0
-        Q_plus = 0.0+torch.rand((128), device = self.device, dtype=torch.float32) * (Q_max - 0.0)
-        P_pots = 0.0+torch.rand((128), device = self.device, dtype=torch.float32) * (P_max - 0.0)
-        actions = torch.tensor([1.0, 2.0], device = self.device, dtype=torch.float32) * torch.rand((128, 2), device = self.device, dtype=torch.float32) + torch.tensor([0.0, -1.0], device = self.device, dtype=torch.float32)
+        P_plus = (0.9*P_max - 0.1)*torch.rand((128), device = self.device, dtype=torch.float64) + 0.1
+        Q_plus = 0.1+torch.rand((128), device = self.device, dtype=torch.float64) * (0.9*Q_max - 0.1)
+        P_pots = 0.0+torch.rand((128), device = self.device, dtype=torch.float64) * (P_max - 0.0)
+
+        P_max = torch.rand((128), device = self.device, dtype=torch.float64)
+        Q_max = torch.rand((128), device = self.device, dtype=torch.float64)
+
+        P_plus = torch.rand((128), device = self.device, dtype=torch.float64)
+        Q_plus = torch.rand((128), device = self.device, dtype=torch.float64)
+        P_pots = torch.rand((128), device = self.device, dtype=torch.float64)
+        actions = torch.tensor([1.0, 2.0], device = self.device, dtype=torch.float64) * torch.rand((128, 2), device = self.device, dtype=torch.float64) + torch.tensor([0.0, -1.0], device = self.device, dtype=torch.float64)
 
         
         def closure():
@@ -279,7 +289,7 @@ class Samples(Dataset):
         if self.transform:
             X = self.transform(X)
             y = self.transform(y)
-        return X.astype(np.float32), y.astype(np.float32)
+        return X.astype(np.float64), y.astype(np.float64)
 
 
 if __name__ == "__main__":
