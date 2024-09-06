@@ -1,6 +1,8 @@
 import lightning as L
 import pandas as pd
 import numpy as np
+import torchjd
+from torchjd.aggregation import UPGrad, MGDA, NashMTL, DualProj
 from tqdm import tqdm
 from pypfopt.expected_returns import mean_historical_return
 from pypfopt.risk_models import CovarianceShrinkage
@@ -20,7 +22,7 @@ from torch import (
     full,
     bernoulli,
 )
-from torchmetrics.regression import R2Score
+from torchmetrics.regression import R2Score, MeanAbsolutePercentageError
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from scipy.stats import qmc
@@ -49,7 +51,7 @@ class ResidualBlock(nn.Module):
     def __init__(self, n):
         super().__init__()
         device = torch.device("cpu" if torch.cuda.is_available() else "mps")
-        self.linear = nn.Linear(n, n).to(dtype=torch.float64, device=device)
+        self.linear = nn.Linear(n, n).to(dtype=torch.float32, device=device)
         self.relu = nn.LeakyReLU()
         self.ln = nn.BatchNorm1d(n)
         self.dropout = nn.Dropout(0.1)
@@ -67,13 +69,12 @@ class Net(nn.Module):
         self.mlp = nn.Sequential(
             #nn.BatchNorm1d(8),
 
-            nn.Linear(7, 1024),
+            nn.Linear(7, 512),
             nn.LeakyReLU(),
-            ResidualBlock(1024),
-            ResidualBlock(1024),
-            ResidualBlock(1024),
-            nn.Linear(1024, 9),
-        ).to(dtype=torch.float64, device=device)
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Linear(512, 9),
+        ).to(dtype=torch.float32, device=device)
 
     def forward(self, X):
         y = self.mlp(X)
@@ -98,12 +99,13 @@ class KKT_NN():
         self.tau = 1e-1
         self.n_iter = 0
         self.eps = 1e-4
-        self.es= EarlyStopper(patience = 5000)
+        self.es= EarlyStopper(patience = 1000)
         self.plateau = False
         self.terminated = False
-        self.optimizer = optim.Adam(self.net.parameters(), lr=1E-5)
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =1.0)
-        self.coeffs = torch.zeros(3, device=self.device, dtype=torch.float64)
+        self.optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.998)
+        self.agg = UPGrad()
+        self.coeffs = torch.ones(3, device=self.device, dtype=torch.float32)
         self.initial_losses = None
         self.previous_losses = None
         
@@ -111,39 +113,24 @@ class KKT_NN():
                 [
                     [-1, 0], [1, 0], [1, 0], [0, -1], [0, 1], [0, 1], [0, -1]
                 ]
-            ).to(dtype=torch.float64, device=device)
-    def loss_grad_std_wn(self, loss, net):
-        with torch.no_grad():
-            device = torch.device("cpu" if torch.cuda.is_available() else "mps")
-            grad_ = torch.zeros((0), dtype=torch.float64, device=device)
-            for elem in torch.autograd.grad(loss, net.parameters(), retain_graph=True):
-                grad_ = torch.cat((grad_, elem.view(-1)))
-            mean = torch.mean(grad_)
-            diffs = grad_ - mean
-            var = torch.mean(torch.pow(diffs, 2.0))
+            ).to(dtype=torch.float32, device=device)
 
-            if var.item() == 0.0:
-                return 0.0
-            std = torch.pow(var, 0.5)
-            zscores = diffs / std
-            #kurtoses = torch.mean(torch.pow(zscores, 4.0)) - 3.0
-            return 1.0 / (torch.std(grad_) + torch.finfo(torch.float64).eps)
 
     def coeff_rel_improv(self, losses, prev_losses):
         with torch.no_grad():
             coeff_rel_improv = 4 * torch.exp(
-                losses / (self.tau * prev_losses + torch.finfo(torch.float64).eps)
+                losses / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
                 - torch.max(
-                    losses / (self.tau * prev_losses + torch.finfo(torch.float64).eps)
+                    losses / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
                 )
             )
 
             coeff_rel_improv /= torch.sum(
                 torch.exp(
-                    losses / (self.tau * prev_losses + torch.finfo(torch.float64).eps)
+                    losses / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
                     - torch.max(
                         losses
-                        / (self.tau * prev_losses + torch.finfo(torch.float64).eps)
+                        / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
                     )
                 )
             )
@@ -154,26 +141,26 @@ class KKT_NN():
 
         beta = torch.bernoulli(torch.tensor(self.beta_p))
         G_val =self.G_val.repeat(actions.shape[0], 1, 1)
-        
+       
         tau1 = (Q_plus - Q_max)/(P_max - P_plus)
         tau2 = (-Q_plus + Q_max)/(P_max - P_plus)
 
         rho1 = Q_max - tau1*P_plus
         rho2 = -Q_max - tau2*P_plus
-        h_val =torch.stack((torch.zeros(128, device = self.device, dtype=torch.float64), P_max, P_pots, Q_max, Q_max, rho1, -rho2), 1)
+        h_val =torch.stack((torch.zeros(1024, device = self.device, dtype=torch.float32), P_max, P_pots, Q_max, Q_max, rho1, -rho2), 1)
         G_val[..., -2 , 0] = -tau1
         G_val[..., -1 , 0] = tau2
         grad_g = torch.bmm(lambd.unsqueeze(1), G_val).squeeze()
         grad_f = sol - actions
         g_ineq = torch.bmm(G_val, sol.unsqueeze(2)).squeeze() - h_val
-        stationarity = grad_f + 0*grad_g
+        stationarity = grad_f + grad_g
         complementary = lambd * g_ineq
-        loss_stationarity = torch.norm(stationarity)
-        loss_g_ineq = torch.norm(torch.relu(g_ineq))
-        loss_complementary = torch.norm(complementary)
+        loss_stationarity = torch.norm(stationarity, p=2, dim=1).mean()
+        loss_g_ineq = torch.norm(torch.relu(g_ineq), p=2, dim=1).mean()
+        loss_complementary = torch.norm(complementary, p=2, dim=1).mean()
         loss_sparsity = torch.norm(sol, p=1)
 
-        self.coeffs[0] = 1.0
+        
     
         losses = torch.stack([loss_stationarity, loss_g_ineq, loss_complementary])
         
@@ -183,9 +170,12 @@ class KKT_NN():
         if self.previous_losses is None:
             self.previous_losses = losses
 
-        with torch.no_grad():
+        #with torch.no_grad():
             #self.coeffs = self.alpha*(beta*self.coeffs + (1-beta)*self.coeff_rel_improv(losses, self.initial_losses)) + (1-self.alpha)*self.coeff_rel_improv(losses, self.previous_losses)
-            #self.coeffs = self.coeffs / (self.coeffs[0] + torch.finfo(torch.float64).eps)
+            #self.coeffs = self.coeffs / (self.coeffs[0] + torch.finfo(torch.float32).eps)
+            #self.coeffs[0] = self.alpha*self.coeffs[0]*(1-self.alpha)*self.loss_grad_std_wn(loss_stationarity, self.net)
+            #self.coeffs[1] = self.alpha*self.coeffs[1]*(1-self.alpha)*self.loss_grad_std_wn(loss_g_ineq, self.net)
+            #self.coeffs[2] = self.alpha*self.coeffs[2]*(1-self.alpha)*self.loss_grad_std_wn(loss_complementary, self.net)
             
             self.previous_losses = losses
 
@@ -200,19 +190,15 @@ class KKT_NN():
         self.net.train()
         
         
-        P_max = 0.8*torch.rand((128), device = self.device, dtype=torch.float64) +0.2
-        Q_max = 0.8*torch.rand((128), device = self.device, dtype=torch.float64) +0.2
+        P_max = 0.8*torch.rand((1024), device = self.device, dtype=torch.float32) +0.2
+        Q_max = 0.8*torch.rand((1024), device = self.device, dtype=torch.float32) +0.2
 
-        P_plus = (0.9*P_max - 0.1)*torch.rand((128), device = self.device, dtype=torch.float64) + 0.1
-        Q_plus = 0.1+torch.rand((128), device = self.device, dtype=torch.float64) * (0.9*Q_max - 0.1)
-        P_pots = 0.0+torch.rand((128), device = self.device, dtype=torch.float64) * (P_max - 0.0)
+        P_plus = (0.9*P_max - 0.1)*torch.rand((1024), device = self.device, dtype=torch.float32) + 0.1
+        Q_plus = 0.1+torch.rand((1024), device = self.device, dtype=torch.float32) * (0.9*Q_max - 0.1)
+        P_pots = 0.0+torch.rand((1024), device = self.device, dtype=torch.float32) * (P_max - 0.0)
 
-        P_max = torch.ones((128), device = self.device, dtype=torch.float64)*0.5
-        Q_max = torch.ones((128), device = self.device, dtype=torch.float64)*0.5
-
-        P_plus = torch.ones((128), device = self.device, dtype=torch.float64)*0.3
-        Q_plus = torch.ones((128), device = self.device, dtype=torch.float64)*0.3
-        actions = torch.tensor([1.0, 2.0], device = self.device, dtype=torch.float64) * torch.rand((128, 2), device = self.device, dtype=torch.float64) + torch.tensor([0.0, -1.0], device = self.device, dtype=torch.float64)
+        
+        actions = torch.tensor([1.0, 2.0], device = self.device, dtype=torch.float32) * torch.rand((1024, 2), device = self.device, dtype=torch.float32) + torch.tensor([0.0, -1.0], device = self.device, dtype=torch.float32)
 
         
         def closure():
@@ -221,7 +207,8 @@ class KKT_NN():
             )
 
             self.optimizer.zero_grad()
-            kkt_loss.backward()
+            #kkt_loss.backward()
+            torchjd.backward([stationarity, g_ineq, complementary], self.net.parameters(), self.agg)
             #torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.0)
             self.tb_logger.add_scalars('run',
                 {
@@ -252,14 +239,16 @@ class KKT_NN():
        
             y = y.to(self.device)
             sol, lambd = self.net(X)
-            val_loss = nn.functional.mse_loss(sol, y)
+            val_loss = nn.functional.l1_loss(sol, y)
             val_r2 = R2Score(2).to(self.device)(sol, y)
-            self.tb_logger.add_scalar("Loss/Val", val_loss, self.n_iter)
-            self.tb_logger.add_scalar("R2/Val", val_r2,  self.n_iter)
+            val_mape = MeanAbsolutePercentageError().to(self.device)(sol, y)
+            self.tb_logger.add_scalar("Val/Loss", val_loss, self.n_iter)
+            self.tb_logger.add_scalar("Val/R2", val_r2,  self.n_iter)
+            self.tb_logger.add_scalar("Val/MAPE", val_mape,  self.n_iter)
             self.tb_logger.add_scalar("Loss/Val", val_loss, self.n_iter)
             self.tb_logger.add_scalar("Sol/True", y[-1,0],  self.n_iter)
             self.tb_logger.add_scalar("Sol/Pred", sol[-1,0],  self.n_iter)
-            self.tb_logger.add_scalar("Lambd", lambd[-1,0],  self.n_iter)
+            self.tb_logger.add_scalar("Lambd", lambd.max(),  self.n_iter)
             self.tb_logger.flush()
 
     def test_step(self, batch, batch_idx):
@@ -288,7 +277,7 @@ class Samples(Dataset):
         if self.transform:
             X = self.transform(X)
             y = self.transform(y)
-        return X.astype(np.float64), y.astype(np.float64)
+        return X.astype(np.float32), y.astype(np.float32)
 
 
 if __name__ == "__main__":
