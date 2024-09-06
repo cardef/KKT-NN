@@ -16,6 +16,12 @@ author:
         ror: https://ror.org/0023sah13
 keywords:
     - Optimization
+    - Parametric Optimization
+    - Convex Optimization
+    - Karush-Kuhn-Tucker (KKT) Conditions
+    - Neural Networks
+filters:
+  - tikz
 format:
     arxiv-pdf:
         keep-tex: true
@@ -24,11 +30,15 @@ format:
                 \usepackage{amsmath}
                 \usepackage{tikz}
 abstract: |
-  This is the abstract  
+  It's presented a neural network-based approach for solving parametric convex optimization problems, where the network estimates the optimal points given a batch of input parameters. The network is trained by penalizing violations of the Karush-Kuhn-Tucker (KKT) conditions, ensuring that its predictions adhere to these optimality criteria. Additionally, since the bounds of the parameter space are known, training batches can be randomly generated without requiring external data. This method trades guaranteed optimality for significant improvements in speed, enabling parallel solving of a class of optimization problems.
 ---
 
 # Introduction
+Solving convex optimization problems is essential across numerous fields, including optimal control, logistics, and finance. In many scenarios, such as the development of surrogate models, there is a need to solve a large set of related optimization problems defined by varying parameters. Achieving fast solutions, even at the cost of strict optimality guarantees, is often a priority.
 
+Neural networks, with their inherent ability to process data in parallel and adapt to diverse problem structures, offer a promising solution. In this work, we introduce the KKT-Informed Neural Network (KINN), a method designed to solve parametric convex optimization problems efficiently by integrating the KKT conditions into the network's learning process. By doing so, we enable the rapid, parallel solving of optimization problems while balancing the trade-off between speed and guaranteed optimality.
+
+# State of the art
 # Background
 
 Consider a parametric convex optimization problem in the standard form:
@@ -51,49 +61,54 @@ Assume differentiable cost and constraints functions and that $g_i$ satisfies Sl
     g_i(x^*, \theta) \leq 0& \quad i=1,\dots, m\\
     \lambda_i^* \geq 0& \quad i=1,\dots, m\\
     \lambda_i^* g_i(x^*, \theta) = 0& \quad i=1,\dots, m\\
-    \nabla_{x^*} f(x^*, \theta) + \sum\nolimits_{i=1}^m \lambda^*_i\nabla_{x^*} g_i(x^*, \theta) + A^T\nu^* = 0 &
+    \nabla_{x^*} f(x^*, \theta) + \sum\nolimits_{i=1}^m \lambda^*_i\nabla_{x^*} g_i(x^*, \theta) + A(\theta)^T\nu^* = 0 &
 \end{align}
 ```
 # Proposed method
 
-KKT-Informed Neural Network (KINN) builds upon the principles of Physics-Informed Neural Networks (PINNs), incorporating mathematical conditions of the Karush-Kuhn-Tucker (KKT) conditions directly into the neural architecture. This integration facilitates a disciplined learning process where the network not only predicts optimization variables but also ensures these predictions are compliant with KKT conditions, essential for guaranteeing the optimality of solutions in convex optimization under exam.
+KKT-Informed Neural Network (KINN) builds upon the principles of Physics-Informed Neural Networks (PINNs), inducing compliance with Karush-Kuhn-Tucker (KKT) through a learning bias, directly coding their violation into the loss function that will be minimized in the training phase.
 
-Network architecture is a MLP designed to take a batch of problem parameters $\Theta = \{\theta^{(i)}\}_{i=1}^N$ as input and predict $x^*$, $\lambda^*$, $\nu^*$. A ReLU function is placed at the end of the branch predicting $\lambda^*$ to ensure its feasability.
+The network is designed as a multi-layer perceptron (MLP) and processes a batch of $B$ problem parameters $\Theta \in \mathbb{R}^{B \times k}$, $\Theta_i = \theta^{(i)}$. The network outputs $\hat{X}$, $\hat\Lambda$, $\hat{N}$. A ReLU function is placed at the end of the branch predicting $\hat\Lambda$ to ensure its feasability.
 
 ```{=tex}
 \begin{align}
-(\hat{x}, \hat{\lambda}, \hat{\nu}) &= \textrm{KINN}(\Theta)\\
-\hat{\lambda} &\in \mathbb{R}⁰_+
+[\hat{X}, \hat{\Lambda}, \hat{N}] &= \textrm{KINN}(\Theta)\\
+\hat{X} \in \mathbb{R}^{B\times n}&, \quad \hat X_i = x^{(i)}\\
+\hat{\Lambda} \in \mathbb{R}^{0^{B\times m}}_+&, \quad \hat\Lambda_i = \lambda^{(i)}\\
+\hat{N} \in \mathbb{R}^{B\times p}&, \quad \hat{N}_i = \nu^{(i)}
 \end{align}
 ```
 
-Loss function is so defined:
+Vector-valued loss function consists of four terms that correspond to each KKT conditions:
 
-$$
-\mathcal{L} = \mathcal{L}_S + \sum_{i=1}^m\mathcal{L}_{I,i} + \mathcal{L}_E  + \sum_{i=1}^m\mathcal{L}_{C,i} 
-$$
+
+
+\begin{equation}
+\mathcal{L} = \frac{1}{B}[\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{E}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}] 
+\end{equation}
+
 where:
 
 ```{=tex}
 \begin{align}
-    \mathcal{L}_S =& \|\nabla_{\hat{x}} f(\hat{x}, \theta) + \sum\nolimits_{i=1}^m \hat{\lambda}_i\nabla_{\hat{x}} g_i(\hat{x}, \theta) + A^T\hat{\nu}\|_2\\ 
-    \mathcal{L}_{I,i}  =& \|\max(0, g_i(\hat{x}, \theta))\|_2\\
-    \mathcal{L}_E =& \|A(\theta) \hat{x} - b(\theta)\|_2\\
-    \mathcal{L}_{C,i}  =& \|\hat{\lambda}_i g_i(\hat{x}, \theta)\|_2\\
+    \mathcal{L}_{S} =& \|\nabla_{\hat{x}^{(i)}} f(\hat{x}^{(i)}, \theta^{(i)}) + \sum\nolimits_{j=1}^m \hat{\lambda}^{(i)}_j\nabla_{\hat{x}^{(i)}} g_j(\hat{x}^{(i)}, \theta^{(i)}) + A(\theta^{(i)})^T\hat{\nu}^{(i)}\|_2\\ 
+    \mathcal{L}_{I}^{(i)}  =& \|(\max(0, g_1(\hat{x}^{(i)}, \theta^{(i)})),\dots,\max(0, g_m(\hat{x}^{(i)}, \theta^{(i)})))\|_2\\
+    \mathcal{L}_{E}^{(i)} =& \|A(\theta^{(i)}) \hat{x}^{(i)} - b(\theta^{(i)})\|_2\\
+    \mathcal{L}_{C}^{(i)}  =& \|(\hat{\lambda}_1^{(i)} g_1(\hat{x}^{(i)}, \theta^{(i)}),\dots,\hat{\lambda}_m^{(i)} g_m(\hat{x}^{(i)}, \theta^{(i)}))\|_2\\
 \end{align}
 ```
+
+This vector-valued loss function is minimized through a Jacobian descent. Let $\mathcal{J} \in \mathbb{R}^{P\times4}$ the Jacobian matrix of $\mathcal{L}$, with $P$ the number of parameters of the KINN, $\mathcal{A}: \mathbb{R}^{P\times4} \to \mathbb{R}^{P}$ is called aggregator. The "direction" of the update of networks parameters will be $\mathcal{A}(\mathcal{J})$. The aggregator chosen is $\mathcal{A}_{\mathrm{UPGrad}}$. 
+
 # Case study
-Let us take such a problem as a test case for this approach:
-
-We have a renewable energy generator in a power grid, whose active and reactive power injections are controllable. The set of injection points $(P,Q)$ is limited by physical constraints, so the set-points $(a_P, a_Q)$ must be projected onto that set.
-
+We consider a renewable energy generator in a power grid as a test case for this approach. The generator's active and reactive power injections $(P,Q)$ are controllable, but they must adhere to physical constraints. As such, the desired setpoints $(a_P, a_Q)$ must be projected onto the feasible set defined by these constraints. This problem is taken from
 
 ## Problem description
 
-The feasibile set $\mathcal{D}$ is defined by the physical parameters of the generator $\overline{P}_g, \underline{P}_g, P⁺_g, \overline{Q}_g, \underline{Q}_g, Q⁺_g, Q⁻_g$ , characterizing the minimum and maximum possible values and the relationships between active and reactive power, and the dynamic value $P^{\textrm{(max)}}_{g,t}$ which indicates the maximum power that can be generated at that time given the external conditions (e.g. wind speed, solar radiation, etc.):
+The feasibile set $\mathcal{D}$ is defined by the physical parameters of the generator $\overline{P}_g \in \mathbb{R}_0⁺$, $P⁺_g \in ]0, \overline{P}_g]$, $\overline{Q}_g \in \mathbb{R}_0⁺$, $Q⁺_g \in ]0, \overline{Q}_g]$, characterizing the minimum and maximum possible values and the relationships between active and reactive power, and the dynamic value $P^{\textrm{(max)}}_{g,t}$ which indicates the maximum power that can be generated at that time given the external conditions (e.g. wind speed, solar radiation, etc.):
 
 \begin{equation}
-\mathcal{D} = \{(P, Q) \in \mathbb{R}² | \underline{P}_g \leq P \leq P^{\textrm{(max)}}_{g,t}, Q_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
+\mathcal{D} = \{(P, Q) \in \mathbb{R}² | 0 \leq P \leq P^{\textrm{(max)}}_{g,t}, -\overline{Q}_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
 \end{equation}
 
 where:
@@ -101,10 +116,14 @@ where:
 \begin{align}
     \tau^{(1)}_g &= \frac{Q_g⁺ - \overline{Q}_g}{\overline{P_g} - P_g⁺}\\
     \rho^{(1)}_g &= \overline{Q}_g - \tau^{(1)}_gP_g⁺\\
-    \tau^{(2)}_g &= \frac{Q_g^- - \underline{Q}_g}{\overline{P_g} - P_g⁺}\\
-    \rho^{(2)}_g &= \underline{Q}_g - \tau^{(2)}_gP_g⁺  \\
+    \tau^{(2)}_g &= \frac{\overline{Q}_g -Q_g^+ }{\overline{P_g} - P_g⁺}\\
+    \rho^{(2)}_g &= -\overline{Q}_g - \tau^{(2)}_gP_g⁺  \\
 \end{align}
 ```
+
+```{=tex}
+\begin{figure}
+
 \begin{center}
 \begin{tikzpicture}
 
@@ -112,42 +131,47 @@ where:
 
 
 % Area grigia
-\fill[gray!20] (0,-3) rectangle (5,3);
-\fill[gray!20] (5,-2) rectangle (6,2);
-\fill[gray!20] (5,2) -- (6,2) -- (5,3) -- cycle;
-\fill[gray!20] (5,-2) -- (6,-2) -- (5,-3) -- cycle;
+\fill[gray!20] (0,-3) rectangle (4,3);
+\fill[gray!20] (4,-2) rectangle (5,2);
+\fill[gray!20] (4,2) -- (5,2) -- (5, 2.5) -- (4,3)-- cycle;
+\fill[gray!20] (4,-2) -- (5,-2) -- (5, -2.5) -- (4,-3) -- cycle;
 % Linee tratteggiate orizzontali per Q
-\draw (0,3) -- (5,3);
+\draw (0,3) -- (4,3);
 \draw[dashed] (0,2) -- (6,2);
 \draw[dashed] (0,-2) -- (6,-2);
-\draw (0,-3) -- (5,-3);
+\draw (0,-3) -- (4,-3);
 
 % Linee tratteggiate verticali per P
-\draw[dashed] (5,3) -- (5,-3);
-
+\draw[dashed] (4,3) -- (4,-3);
+\draw (5,2.5) -- (5,-2.5);
 % Etichette per Q
-\node at (-0.3,3) {$Q_g$};
+\node at (-0.5,3) {$\overline{Q}_g$};
 \node at (-0.5,2) {$Q_g^+$};
-\node at (-0.3,-2) {$Q_g⁻$};
-\node at (-0.5,-3) {$\underline{Q}_g$};
+\node at (-0.5,-2) {$-Q_g⁺$};
+\node at (-0.5,-3) {$-\overline{Q}_g$};
 
 % Etichette per P
-\node at (5,0.3) {$P_g^+$};
-\node at (6,-0.3) {$\overline{P}_g$};
+\node at (3.7,0.3) {$P_g^+$};
+\node at (5.5,0.3) {$P^{\textrm{(max)}}_{g,t}$};
+\node at (6.3,-0.3) {$\overline{P}_g$};
 
 % Linee inclinate e relative etichette
-\draw (5,3) -- (6,2);
-\draw (5,-3) -- (6,-2);
+\draw (4,3) -- (5,2.5);
+\draw (4,-3) -- (5,-2.5);
+\draw[dashed] (4,3) -- (6,2);
+\draw[dashed] (4,-3) -- (6,-2);
 
-\draw (6,1.5) -- (6,-2);
-\node at (6.7,2) {$\tau_g^{(1)} P + \rho_g^{(1)}$};
-\node at (6.7,-2) {$\tau_g^{(2)} P + \rho_g^{(2)}$};
+\draw[dashed] (6,2) -- (6,-2);
+\node at (5.5,3) {$\tau_g^{(1)} P + \rho_g^{(1)}$};
+\node at (5.5,-3) {$\tau_g^{(2)} P + \rho_g^{(2)}$};
 
 \draw[->] (-0.5,0) -- (6.5,0) node[right] {$P$};
 \draw[->] (0,-3.5) -- (0,3.5) node[above] {$Q$};
 \end{tikzpicture}
 \end{center}
-
+\caption{A picture of a gull}
+\end{figure}
+```
 The problem could be stated in standard form as:
 
 $$
@@ -168,7 +192,7 @@ G = \begin{pmatrix}
 
 \begin{equation}
 h = \begin{pmatrix}
--\underline{P}_g & \overline{P}_g & P^{\textrm{(max)}}_{g,t} & -\underline{Q}_g & \overline{Q}_g & \rho^{(1)}_g & -\rho^{(2)}_g
+0 & \overline{P}_g & P^{\textrm{(max)}}_{g,t} & \overline{Q}_g & \overline{Q}_g & \rho^{(1)}_g & -\rho^{(2)}_g
 \end{pmatrix}^T
 \end{equation}
 
@@ -181,7 +205,7 @@ With associated KKT conditions:
 \end{align}
 
 ## Experimental results
-The problem described has a two-dimensional optimization variable, ten scalar parameters and seven constraints:
+The problem described has a two-dimensional optimization variable, seven scalar parameters and seven constraints:
 
 \begin{equation}
  (X, \Lambda) = \mathrm{KINN}(\Theta)
@@ -189,10 +213,12 @@ The problem described has a two-dimensional optimization variable, ten scalar pa
 
 with: 
 \begin{align}
-\Theta \in \mathbb{R}^{N \times 10}, \quad&\Theta_{i} = (a_P^{(i)}, a_Q^{(i)},\overline{P}_g^{(i)}, \underline{P}_g^{(i)}, P_g^{+^{(i)}}, \overline{Q}_g^{(i)}, \underline{Q}_g^{(i)}, Q_g^{+^{(i)}}, Q_g^{-^{(i)}}, P^{\textrm{(max)}^{(i)}}_{g,t})\\
-X \in \mathbb{R}^{N \times 2}, \quad&X_{i} = (P^{(i)}, Q^{(i)})\\
-\Lambda \in \mathbb{R}_+^{0^{N \times 7}}, \quad&\Lambda_{i} = \lambda^{(i)}
+\Theta \in \mathbb{R}^{B \times 7}, \quad&\Theta_{i} = (a_P^{(i)}, a_Q^{(i)},\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}, P^{\textrm{(max)}^{(i)}}_{g,t})\\
+X \in \mathbb{R}^{B \times 2}, \quad&X_{i} = (P^{(i)}, Q^{(i)})\\
+\Lambda \in \mathbb{R}_+^{0^{B \times 7}}, \quad&\Lambda_{i} = \lambda^{(i)}
 \end{align}
+
+The network is composed by two hidden layers of 512 neurons each, with a LeakyReLU (negative slope of $0.01$) as activation function.  
 
 At each training step, a random batch of parameters $\Theta$ was sampled:
 
@@ -206,11 +232,12 @@ Q_g^{+^{(i)}} &\sim U(0~\mathrm{p.u}., \overline{Q}_g^{(i)})\\
 P^{\textrm{(max)}^{(i)}}_{g,t} &\sim U(0~\mathrm{p.u}., \overline{P}_g^{(i)})
 \end{align}
 
-Models parameters were update to minimize the following loss function:
+Models parameters were update to minimize the following vector-valued loss function:
 
-$$
-\mathcal{L} = \frac{1}{N}\sum_{i=1}^N(\mathcal{L}_S^{(i)} + \mathcal{L}_{I}^{(i)}  + \mathcal{L}_{C}^{(i)})
-$$
+\begin{equation}
+\mathcal{L} = \frac{1}{B}[\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}] 
+\end{equation}
+
 where:
 
 ```{=tex}
@@ -222,10 +249,14 @@ where:
 ```
 
 ### Training
+
+Training was performed with the Adam optimization algorithm with an intial learning rate of $10⁻3$ and an exponential scheduler for the latter with a $\gamma$ of $0.997$. An early stopping condition occurred when no progress occurred on any of the constituent terms of the loss for $5000$ steps.
+
+Finally, the training lasted reaching final values shown in the table
 ```{python}
-#| label: fig-polar
+#| label: fig-loss
 #| echo: false
-#| fig-cap: "A line plot on a polar axis"
+#| fig-cap: "Loss terms during training"
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -244,6 +275,8 @@ plt.plot(ineq['Step'], ineq['Value'].ewm(alpha=2 / 3).mean())
 
 
 ### Evaluation
+
+To evaluate the approach presented here, the “cvxpylayers” library, which implements a batched solver, was used as a baseline
 ```{python}
 #| label: fig-polar2
 #| echo: false
@@ -274,5 +307,22 @@ r2 = pd.read_csv("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/Preprint/pl
 plt.plot(r2['Step'], r2['Value'].ewm(alpha=2 / 3).mean())
 
 ```
+
 ### Comparison
+```{python}
+#| label: fig-polar4
+#| echo: false
+#| fig-cap: "A line plot on a polar axis"
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set(style='ticks', palette='Set2')
+sns.despine()
+
+times = pd.read_csv("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/Preprint/plots/times.csv")
+plt.yscale("log")
+plt.plot(times['size'], times['KINN'].ewm(alpha=2 / 3).mean())
+plt.plot(times['size'], times['CVXPY'].ewm(alpha=2 / 3).mean())
+
+```
 # Conclusions
