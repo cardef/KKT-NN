@@ -20,7 +20,7 @@
 \usepackage{lmodern}
 \ifPDFTeX\else  
     % xetex/luatex font selection
-  \setmainfont[]{Latin Modern Roman}
+    \setmainfont[]{Latin Modern Roman}
   \setmathfont[]{Latin Modern Math}
 \fi
 % Use upquote if available, for straight quotes in verbatim environments
@@ -43,14 +43,28 @@
 \setlength{\emergencystretch}{3em} % prevent overfull lines
 \setcounter{secnumdepth}{5}
 % Make \paragraph and \subparagraph free-standing
+\makeatletter
 \ifx\paragraph\undefined\else
   \let\oldparagraph\paragraph
-  \renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+  \renewcommand{\paragraph}{
+    \@ifstar
+      \xxxParagraphStar
+      \xxxParagraphNoStar
+  }
+  \newcommand{\xxxParagraphStar}[1]{\oldparagraph*{#1}\mbox{}}
+  \newcommand{\xxxParagraphNoStar}[1]{\oldparagraph{#1}\mbox{}}
 \fi
 \ifx\subparagraph\undefined\else
   \let\oldsubparagraph\subparagraph
-  \renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+  \renewcommand{\subparagraph}{
+    \@ifstar
+      \xxxSubParagraphStar
+      \xxxSubParagraphNoStar
+  }
+  \newcommand{\xxxSubParagraphStar}[1]{\oldsubparagraph*{#1}\mbox{}}
+  \newcommand{\xxxSubParagraphNoStar}[1]{\oldsubparagraph{#1}\mbox{}}
 \fi
+\makeatother
 
 
 \providecommand{\tightlist}{%
@@ -125,9 +139,12 @@
 \@ifpackageloaded{caption}{}{\usepackage{caption}}
 \@ifpackageloaded{subcaption}{}{\usepackage{subcaption}}
 \makeatother
+
 \ifLuaTeX
   \usepackage{selnolig}  % disable illegal ligatures
 \fi
+\usepackage[]{biblatex}
+\addbibresource{bibliography.bib}
 \usepackage{bookmark}
 
 \IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
@@ -143,6 +160,7 @@ Optimization, Karush-Kuhn-Tucker (KKT) Conditions, Neural Networks},
   citecolor={Blue},
   urlcolor={Blue},
   pdfcreator={LaTeX via pandoc}}
+
 
 \newcommand{\runninghead}{A Preprint }
 \title{KKT-Informed Neural Network}
@@ -177,6 +195,7 @@ optimization problems.
 Optimization \sep Parametric Optimization \sep Convex
 Optimization \sep Karush-Kuhn-Tucker (KKT) Conditions \sep 
 Neural Networks
+
 
 
 \section{Introduction}\label{introduction}
@@ -263,7 +282,7 @@ Vector-valued loss function consists of four terms that correspond to
 each KKT conditions:
 
 \begin{equation}
-\mathcal{L} = \frac{1}{B}[\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{E}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}] 
+\mathcal{L} = \frac{1}{B}\biggl(\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{E}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}\biggl) 
 \end{equation}
 
 where:
@@ -275,13 +294,15 @@ where:
     \mathcal{L}_{C}^{(i)}  =& \|(\hat{\lambda}_1^{(i)} g_1(\hat{x}^{(i)}, \theta^{(i)}),\dots,\hat{\lambda}_m^{(i)} g_m(\hat{x}^{(i)}, \theta^{(i)}))\|_2\\
 \end{align}
 
-This vector-valued loss function is minimized through a Jacobian
-descent. Let \(\mathcal{J} \in \mathbb{R}^{P\times4}\) the Jacobian
-matrix of \(\mathcal{L}\), with \(P\) the number of parameters of the
-KINN, \(\mathcal{A}: \mathbb{R}^{P\times4} \to \mathbb{R}^{P}\) is
-called aggregator. The ``direction'' of the update of networks
-parameters will be \(\mathcal{A}(\mathcal{J})\). The aggregator chosen
-is \(\mathcal{A}_{\mathrm{UPGrad}}\).
+This vector-valued loss function is minimized through a Jacobian descent
+\autocite{quintonJacobianDescentMultiObjective2024a}. Let
+\(\mathcal{J} \in \mathbb{R}^{P\times4}\) the Jacobian matrix of
+\(\mathcal{L}\), with \(P\) the number of parameters of the KINN,
+\(\mathcal{A}: \mathbb{R}^{P\times4} \to \mathbb{R}^{P}\) is called
+aggregator. The ``direction'' of the update of networks parameters will
+be \(\mathcal{A}(\mathcal{J})\). The aggregator chosen is
+\(\mathcal{A}_{\mathrm{UPGrad}}\), described in
+\autocite{quintonJacobianDescentMultiObjective2024a}.
 
 \section{Case study}\label{case-study}
 
@@ -290,18 +311,9 @@ for this approach. The generator's active and reactive power injections
 \((P,Q)\) are controllable, but they must adhere to physical
 constraints. As such, the desired setpoints \((a_P, a_Q)\) must be
 projected onto the feasible set defined by these constraints. This
-problem is taken from
+problem is taken from \autocite{henryGymANMReinforcementLearning2021}.
 
 \subsection{Problem description}\label{problem-description}
-
-The feasibile set \(\mathcal{D}\) is defined by the physical parameters
-of the generator \(\overline{P}_g \in \mathbb{R}_0⁺\),
-\(P⁺_g \in ]0, \overline{P}_g]\), \(\overline{Q}_g \in \mathbb{R}_0⁺\),
-\(Q⁺_g \in ]0, \overline{Q}_g]\), characterizing the minimum and maximum
-possible values and the relationships between active and reactive power,
-and the dynamic value \(P^{\textrm{(max)}}_{g,t}\) which indicates the
-maximum power that can be generated at that time given the external
-conditions (e.g.~wind speed, solar radiation, etc.):
 
 \begin{equation}
 \mathcal{D} = \{(P, Q) \in \mathbb{R}² | 0 \leq P \leq P^{\textrm{(max)}}_{g,t}, -\overline{Q}_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
@@ -317,7 +329,6 @@ where:
 \end{align}
 
 \begin{figure}
-
 \begin{center}
 \begin{tikzpicture}
 
@@ -363,8 +374,18 @@ where:
 \draw[->] (0,-3.5) -- (0,3.5) node[above] {$Q$};
 \end{tikzpicture}
 \end{center}
-\caption{A picture of a gull}
+\caption{Feasibile set $\mathcal{D}$} \label{fig-set}
 \end{figure}
+
+The feasible set \(\mathcal{D}\) (shown in {[}\ref{fig-set}{]}) is
+defined by the physical parameters of the generator
+\(\overline{P}_g \in \mathbb{R}_0⁺\), \(P⁺_g \in ]0, \overline{P}_g]\),
+\(\overline{Q}_g \in \mathbb{R}_0⁺\), \(Q⁺_g \in ]0, \overline{Q}_g]\),
+characterizing the minimum and maximum possible values and the
+relationships between active and reactive power, and the dynamic value
+\(P^{\textrm{(max)}}_{g,t}\) which indicates the maximum power that can
+be generated at that time given the external conditions (e.g.~wind
+speed, solar radiation, etc.):
 
 The problem could be stated in standard form as:
 
@@ -412,8 +433,8 @@ X \in \mathbb{R}^{B \times 2}, \quad&X_{i} = (P^{(i)}, Q^{(i)})\\
 \Lambda \in \mathbb{R}_+^{0^{B \times 7}}, \quad&\Lambda_{i} = \lambda^{(i)}
 \end{align}
 
-The network is composed by two hidden layers of 512 neurons each, with a
-LeakyReLU (negative slope of \(0.01\)) as activation function.
+The network is composed by three hidden layers of \(512\) neurons each,
+with a LeakyReLU (negative slope of \(0.01\)) as activation function.
 
 At each training step, a random batch of parameters \(\Theta\) was
 sampled:
@@ -432,7 +453,7 @@ Models parameters were update to minimize the following vector-valued
 loss function:
 
 \begin{equation}
-\mathcal{L} = \frac{1}{B}[\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}] 
+\mathcal{L} = \frac{1}{B}\biggr[\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}\biggr] 
 \end{equation}
 
 where:
@@ -446,39 +467,107 @@ where:
 \subsubsection{Training}\label{training}
 
 Training was performed with the Adam optimization algorithm with an
-intial learning rate of \(10⁻3\) and an exponential scheduler for the
-latter with a \(\gamma\) of \(0.997\). An early stopping condition
+intial learning rate of \(10^{-3}\) and an exponential scheduler for the
+latter with a \(\gamma\) of \(0.99986\). An early stopping condition
 occurred when no progress occurred on any of the constituent terms of
 the loss for \(5000\) steps.
 
-Finally, the training lasted reaching final values shown in the table
+Finally, the training lasted \(3583\) steps reaching final values shown
+in Table~\ref{tbl-training}, while the evolution along the various steps
+is in Figure~\ref{fig-training}.
+
+\begin{longtable}[]{@{}cc@{}}
+\caption{Final values}\label{tbl-training}\tabularnewline
+\toprule\noalign{}
+Loss & Value \\
+\midrule\noalign{}
+\endfirsthead
+\toprule\noalign{}
+Loss & Value \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\(\mathcal{L}_S\) & 0.3519 \\
+\(\mathcal{L}_I\) & 0.0020 \\
+\(\mathcal{L}_C\) & 0.0000 \\
+\end{longtable}
 
 \begin{figure}
 
 \centering{
 
-\includegraphics{Preprint_files/figure-pdf/fig-loss-output-1.pdf}
+\includegraphics{Preprint_files/figure-pdf/fig-training-output-1.pdf}
 
 }
 
-\caption{\label{fig-loss}Loss terms during training}
+\caption{\label{fig-training}Loss terms during training}
 
 \end{figure}%
 
 \subsubsection{Evaluation}\label{evaluation}
 
-To evaluate the approach presented here, the ``cvxpylayers'' library,
-which implements a batched solver, was used as a baseline
+To evaluate the approach presented here, the ``cvxpylayers'' library
+\autocite{agrawalDifferentiableConvexOptimization2019a}, which
+implements a batched solver via multi-threading, was used as a baseline.
+The validation set consists of 1000 samples, generated by taking the
+physical parameters of the two generators present in the use case
+presented in and, for each of them, simulating 500 random inputs
+\((a_P, a_Q)\) and external condition \(P^{\textrm{(max)}}_{g,t}\).
+Specifically these parameters are:
+
+\begin{align}
+    [\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}]_1 &= [0.3, 0.2, 0.3, 0.15]\\
+    [\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}]_2 &= [0.5, 0.35, 0.5, 0.2]
+\end{align}
+
+The metrics for validation were the mean absolute error (MAE) and
+\(R^2\). Last values shown in Table~\ref{tbl-eval}, , while the
+evolution along the various steps is in Figure~\ref{fig-val}.
+
+\begin{longtable}[]{@{}cc@{}}
+\caption{Finae values}\label{tbl-eval}\tabularnewline
+\toprule\noalign{}
+Mertric & Value \\
+\midrule\noalign{}
+\endfirsthead
+\toprule\noalign{}
+Mertric & Value \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+MAE & 0.0056 p.u. \\
+\(R^{2}\) & 0.9972 \\
+\end{longtable}
 
 \begin{figure}
 
+\begin{minipage}{0.50\linewidth}
+
 \centering{
 
-\includegraphics{Preprint_files/figure-pdf/fig-polar2-output-1.pdf}
+\includegraphics{Preprint_files/figure-pdf/fig-val-output-1.pdf}
 
 }
 
-\caption{\label{fig-polar2}A line plot on a polar axis}
+\subcaption{\label{fig-val-1}MAE}
+
+\end{minipage}%
+%
+\begin{minipage}{0.50\linewidth}
+
+\centering{
+
+\includegraphics{Preprint_files/figure-pdf/fig-val-output-2.pdf}
+
+}
+
+\subcaption{\label{fig-val-2}\(R^{2}\)}
+
+\end{minipage}%
+
+\caption{\label{fig-val}Evaluation metrics}
 
 \end{figure}%
 
@@ -486,29 +575,22 @@ which implements a batched solver, was used as a baseline
 
 \centering{
 
-\includegraphics{Preprint_files/figure-pdf/fig-polar1-output-1.pdf}
+\includegraphics{Preprint_files/figure-pdf/fig-times-output-1.pdf}
 
 }
 
-\caption{\label{fig-polar1}A line plot on a polar axis}
-
-\end{figure}%
-
-\subsubsection{Comparison}\label{comparison}
-
-\begin{figure}
-
-\centering{
-
-\includegraphics{Preprint_files/figure-pdf/fig-polar4-output-1.pdf}
-
-}
-
-\caption{\label{fig-polar4}A line plot on a polar axis}
+\caption{\label{fig-times}Computation time compariso}
 
 \end{figure}%
 
 \section{Conclusions}\label{conclusions}
+
+\section*{References}\label{references}
+\addcontentsline{toc}{section}{References}
+
+\printbibliography[heading=none]
+
+
 
 
 

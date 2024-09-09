@@ -2,6 +2,8 @@ import lightning as L
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+import torchjd
+from torchjd.aggregation import UPGrad, MGDA, NashMTL, DualProj
 from pypfopt.expected_returns import mean_historical_return
 from pypfopt.risk_models import CovarianceShrinkage
 import torch
@@ -104,8 +106,9 @@ class KKT_NN():
         self.es= EarlyStopper(patience = 10000)
         self.plateau = False
         self.automatic_optimization = False
-        self.optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.99999)
+        self.optimizer = optim.Adam(self.net.parameters(), lr=1e-4)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.9999)
+        self.agg = UPGrad()
         self.coeffs = torch.ones(4, device=self.device, dtype=torch.float32)
         self.initial_losses = None
         self.previous_losses = None
@@ -158,10 +161,10 @@ class KKT_NN():
         dual_feasibility = torch.relu(-lambd)
         stationarity = grad_f + lambd * mu + nu * torch.ones_like(sol)
         complementary = lambd.squeeze() * g_ineq
-        loss_stationarity = torch.norm(stationarity)
-        loss_g_eq = torch.norm(g_eq)
-        loss_g_ineq = (torch.norm(torch.relu(g_ineq)))
-        loss_complementary = torch.norm(complementary)
+        loss_stationarity = torch.norm(stationarity, dim=1).mean()
+        loss_g_eq = torch.norm(g_eq, dim=0).mean()
+        loss_g_ineq = (torch.relu(g_ineq)).mean()
+        loss_complementary = complementary.mean()
         # loss_dual_feasibility = torch.norm(dual_feasibility)**2
         loss_sparsity = torch.norm(sol, p=1)
         lagrangian  = torch.bmm(sol.unsqueeze(1), grad_f.unsqueeze(2)).squeeze() + nu.squeeze()*g_eq + lambd.squeeze()*g_ineq
@@ -220,7 +223,7 @@ class KKT_NN():
             )
 
             self.optimizer.zero_grad()
-            kkt_loss.backward(retain_graph=True)
+            torchjd.backward([stationarity, g_eq, g_ineq, complementary], self.net.parameters(), self.agg)
             self.tb_logger.add_scalars('run',
                 {
                     "train_loss": kkt_loss,

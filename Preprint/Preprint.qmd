@@ -24,6 +24,7 @@ filters:
   - tikz
 format:
     arxiv-pdf:
+        cite-method: biblatex
         keep-tex: true
         include-in-header:
             - text: |
@@ -31,6 +32,7 @@ format:
                 \usepackage{tikz}
 abstract: |
   It's presented a neural network-based approach for solving parametric convex optimization problems, where the network estimates the optimal points given a batch of input parameters. The network is trained by penalizing violations of the Karush-Kuhn-Tucker (KKT) conditions, ensuring that its predictions adhere to these optimality criteria. Additionally, since the bounds of the parameter space are known, training batches can be randomly generated without requiring external data. This method trades guaranteed optimality for significant improvements in speed, enabling parallel solving of a class of optimization problems.
+bibliography: bibliography.bib
 ---
 
 # Introduction
@@ -84,7 +86,7 @@ Vector-valued loss function consists of four terms that correspond to each KKT c
 
 
 \begin{equation}
-\mathcal{L} = \frac{1}{B}[\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{E}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}] 
+\mathcal{L} = \frac{1}{B}\biggl(\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{E}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}\biggl) 
 \end{equation}
 
 where:
@@ -98,14 +100,12 @@ where:
 \end{align}
 ```
 
-This vector-valued loss function is minimized through a Jacobian descent. Let $\mathcal{J} \in \mathbb{R}^{P\times4}$ the Jacobian matrix of $\mathcal{L}$, with $P$ the number of parameters of the KINN, $\mathcal{A}: \mathbb{R}^{P\times4} \to \mathbb{R}^{P}$ is called aggregator. The "direction" of the update of networks parameters will be $\mathcal{A}(\mathcal{J})$. The aggregator chosen is $\mathcal{A}_{\mathrm{UPGrad}}$. 
+This vector-valued loss function is minimized through a Jacobian descent [@quintonJacobianDescentMultiObjective2024a]. Let $\mathcal{J} \in \mathbb{R}^{P\times4}$ the Jacobian matrix of $\mathcal{L}$, with $P$ the number of parameters of the KINN, $\mathcal{A}: \mathbb{R}^{P\times4} \to \mathbb{R}^{P}$ is called aggregator. The "direction" of the update of networks parameters will be $\mathcal{A}(\mathcal{J})$. The aggregator chosen is $\mathcal{A}_{\mathrm{UPGrad}}$, described in [@quintonJacobianDescentMultiObjective2024a]. 
 
 # Case study
-We consider a renewable energy generator in a power grid as a test case for this approach. The generator's active and reactive power injections $(P,Q)$ are controllable, but they must adhere to physical constraints. As such, the desired setpoints $(a_P, a_Q)$ must be projected onto the feasible set defined by these constraints. This problem is taken from
+We consider a renewable energy generator in a power grid as a test case for this approach. The generator's active and reactive power injections $(P,Q)$ are controllable, but they must adhere to physical constraints. As such, the desired setpoints $(a_P, a_Q)$ must be projected onto the feasible set defined by these constraints. This problem is taken from [@henryGymANMReinforcementLearning2021].
 
 ## Problem description
-
-The feasibile set $\mathcal{D}$ is defined by the physical parameters of the generator $\overline{P}_g \in \mathbb{R}_0⁺$, $P⁺_g \in ]0, \overline{P}_g]$, $\overline{Q}_g \in \mathbb{R}_0⁺$, $Q⁺_g \in ]0, \overline{Q}_g]$, characterizing the minimum and maximum possible values and the relationships between active and reactive power, and the dynamic value $P^{\textrm{(max)}}_{g,t}$ which indicates the maximum power that can be generated at that time given the external conditions (e.g. wind speed, solar radiation, etc.):
 
 \begin{equation}
 \mathcal{D} = \{(P, Q) \in \mathbb{R}² | 0 \leq P \leq P^{\textrm{(max)}}_{g,t}, -\overline{Q}_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
@@ -123,7 +123,6 @@ where:
 
 ```{=tex}
 \begin{figure}
-
 \begin{center}
 \begin{tikzpicture}
 
@@ -169,9 +168,13 @@ where:
 \draw[->] (0,-3.5) -- (0,3.5) node[above] {$Q$};
 \end{tikzpicture}
 \end{center}
-\caption{A picture of a gull}
+\caption{Feasibile set $\mathcal{D}$} \label{fig-set}
 \end{figure}
 ```
+
+The feasible set $\mathcal{D}$ (shown in [\ref{fig-set}]) is defined by the physical parameters of the generator $\overline{P}_g \in \mathbb{R}_0⁺$, $P⁺_g \in ]0, \overline{P}_g]$, $\overline{Q}_g \in \mathbb{R}_0⁺$, $Q⁺_g \in ]0, \overline{Q}_g]$, characterizing the minimum and maximum possible values and the relationships between active and reactive power, and the dynamic value $P^{\textrm{(max)}}_{g,t}$ which indicates the maximum power that can be generated at that time given the external conditions (e.g. wind speed, solar radiation, etc.):
+
+
 The problem could be stated in standard form as:
 
 $$
@@ -218,7 +221,7 @@ X \in \mathbb{R}^{B \times 2}, \quad&X_{i} = (P^{(i)}, Q^{(i)})\\
 \Lambda \in \mathbb{R}_+^{0^{B \times 7}}, \quad&\Lambda_{i} = \lambda^{(i)}
 \end{align}
 
-The network is composed by two hidden layers of 512 neurons each, with a LeakyReLU (negative slope of $0.01$) as activation function.  
+The network is composed by three hidden layers of $512$ neurons each, with a LeakyReLU (negative slope of $0.01$) as activation function.  
 
 At each training step, a random batch of parameters $\Theta$ was sampled:
 
@@ -235,7 +238,7 @@ P^{\textrm{(max)}^{(i)}}_{g,t} &\sim U(0~\mathrm{p.u}., \overline{P}_g^{(i)})
 Models parameters were update to minimize the following vector-valued loss function:
 
 \begin{equation}
-\mathcal{L} = \frac{1}{B}[\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}] 
+\mathcal{L} = \frac{1}{B}\biggr[\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}\biggr] 
 \end{equation}
 
 where:
@@ -250,79 +253,121 @@ where:
 
 ### Training
 
-Training was performed with the Adam optimization algorithm with an intial learning rate of $10⁻3$ and an exponential scheduler for the latter with a $\gamma$ of $0.997$. An early stopping condition occurred when no progress occurred on any of the constituent terms of the loss for $5000$ steps.
+Training was performed with the Adam optimization algorithm with an intial learning rate of $10^{-3}$ and an exponential scheduler for the latter with a $\gamma$ of $0.99986$. An early stopping condition occurred when no progress occurred on any of the constituent terms of the loss for $5000$ steps.
 
-Finally, the training lasted reaching final values shown in the table
+Finally, the training lasted $3583$ steps reaching final values shown in @tbl-training, while the evolution along the various steps is in @fig-training.
+
+| Loss            | Value  |
+|:---------------:|:------:|
+| $\mathcal{L}_S$ | 0.3519 |
+| $\mathcal{L}_I$ | 0.0020 |
+| $\mathcal{L}_C$ | 0.0000 |
+: Final values {#tbl-training}
+
 ```{python}
-#| label: fig-loss
+#| label: fig-training
 #| echo: false
 #| fig-cap: "Loss terms during training"
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-sns.set(style='ticks', palette='Set2')
-sns.despine()
 
-stat = pd.read_csv("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/Preprint/plots/stat.csv")
-compl = pd.read_csv("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/Preprint/plots/compl.csv")
-ineq = pd.read_csv("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/Preprint/plots/ineq.csv")
-plt.yscale("log")
-plt.plot(stat['Step'], stat['Value'].ewm(alpha=2 / 3).mean())
-plt.plot(compl['Step'], compl['Value'].ewm(alpha=2 / 3).mean())
-plt.plot(ineq['Step'], ineq['Value'].ewm(alpha=2 / 3).mean())
+
+
+sns.set_context("paper")
+sns.set(style='ticks', palette='tab10')
+stat = pd.read_csv("plots/stat.csv")
+compl = pd.read_csv("plots/compl.csv")
+ineq = pd.read_csv("plots/ineq.csv")
+#plt.yscale("log")
+#.ewm(alpha=2 / 3).mean())
+plt.plot(stat['Step'], stat['Value'])
+plt.plot(compl['Step'], compl['Value'])
+plt.plot(ineq['Step'], ineq['Value'])
+plt.tight_layout()
+plt.xlabel("Step")
+plt.ylabel("MAE")
+plt.show()
 
 ```
 
 
 ### Evaluation
 
-To evaluate the approach presented here, the “cvxpylayers” library, which implements a batched solver, was used as a baseline
+To evaluate the approach presented here, the “cvxpylayers” library [@agrawalDifferentiableConvexOptimization2019a], which implements a batched solver via multi-threading, was used as a baseline. The validation set consists of 1000 samples, generated by taking the physical parameters of the two generators present in the use case presented in and, for each of them, simulating 500 random inputs $(a_P, a_Q)$ and external condition $P^{\textrm{(max)}}_{g,t}$. Specifically these parameters are:
+
+\begin{align}
+    [\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}]_1 &= [0.3, 0.2, 0.3, 0.15]\\
+    [\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}]_2 &= [0.5, 0.35, 0.5, 0.2]
+\end{align}
+
+The metrics for validation were the mean absolute error (MAE) and $R^2$. Last values shown in  [@tbl-eval], , while the evolution along the various steps is in [@fig-val].
+
+| Mertric            | Value  |
+|:---------------:|:------:|
+| MAE| 0.0056 p.u.|
+| $R^{2}$  | 0.9972 |
+: Finae values {#tbl-eval}
+
 ```{python}
-#| label: fig-polar2
+#| label: fig-val
 #| echo: false
-#| fig-cap: "A line plot on a polar axis"
+#| fig-cap: "Evaluation metrics"
+#| fig-subcap: 
+#|      - MAE
+#|      - $R^{2}$
+#| layout-ncol: 2
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-sns.set(style='ticks', palette='Set2')
-sns.despine()
+sns.set_context("paper")
+sns.set(style='ticks', palette='tab10')
 
-loss = pd.read_csv("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/Preprint/plots/loss.csv")
+
+loss = pd.read_csv("plots/loss.csv")
 plt.yscale("log")
-plt.plot(loss['Step'], loss['Value'].ewm(alpha=2 / 3).mean())
+plt.plot(loss['Step'], loss['Value'])
+plt.tight_layout()
+plt.xlabel("Step")
+plt.ylabel("MAE")
+plt.show()
 
+sns.set_context("paper", font_scale = 1)
+sns.set(style='ticks', palette='tab10')
+sns.despine()
+
+r2 = pd.read_csv("plots/r2.csv")[55:]
+plt.plot(r2['Step'], r2['Value'])
+plt.tight_layout()
+plt.xlabel("Step")
+plt.ylabel("MAE")
+plt.show()
 ```
-
 ```{python}
-#| label: fig-polar1
+#| label: fig-times
 #| echo: false
-#| fig-cap: "A line plot on a polar axis"
+#| fig-cap: "Computation time compariso"
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-sns.set(style='ticks', palette='Set2')
+sns.set_context("paper")
+sns.set(style='ticks', palette='tab10')
 sns.despine()
 
-r2 = pd.read_csv("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/Preprint/plots/r2.csv")[100:]
-plt.plot(r2['Step'], r2['Value'].ewm(alpha=2 / 3).mean())
-
-```
-
-### Comparison
-```{python}
-#| label: fig-polar4
-#| echo: false
-#| fig-cap: "A line plot on a polar axis"
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set(style='ticks', palette='Set2')
-sns.despine()
-
-times = pd.read_csv("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/Preprint/plots/times.csv")
+times = pd.read_csv("plots/times.csv")
 plt.yscale("log")
-plt.plot(times['size'], times['KINN'].ewm(alpha=2 / 3).mean())
-plt.plot(times['size'], times['CVXPY'].ewm(alpha=2 / 3).mean())
-
+plt.plot(times['size'], times['KINN'])
+plt.plot(times['size'], times['CVXPY'])
+plt.tight_layout()
+plt.legend(["KINN", "CVXPY"], loc="lower right")
+plt.xlabel("Batch size")
+plt.ylabel("Time (s)")
+plt.show()
 ```
 # Conclusions
+
+
+# References{.unnumbered}
+
+::: {#refs}
+:::

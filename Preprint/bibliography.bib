@@ -1,0 +1,59 @@
+@online{agrawalDifferentiableConvexOptimization2019a,
+  title = {Differentiable {{Convex Optimization Layers}}},
+  author = {Agrawal, Akshay and Amos, Brandon and Barratt, Shane and Boyd, Stephen and Diamond, Steven and Kolter, Zico},
+  date = {2019-10-28},
+  url = {https://arxiv.org/abs/1910.12430v1},
+  urldate = {2024-09-06},
+  abstract = {Recent work has shown how to embed differentiable optimization problems (that is, problems whose solutions can be backpropagated through) as layers within deep learning architectures. This method provides a useful inductive bias for certain problems, but existing software for differentiable optimization layers is rigid and difficult to apply to new settings. In this paper, we propose an approach to differentiating through disciplined convex programs, a subclass of convex optimization problems used by domain-specific languages (DSLs) for convex optimization. We introduce disciplined parametrized programming, a subset of disciplined convex programming, and we show that every disciplined parametrized program can be represented as the composition of an affine map from parameters to problem data, a solver, and an affine map from the solver's solution to a solution of the original problem (a new form we refer to as affine-solver-affine form). We then demonstrate how to efficiently differentiate through each of these components, allowing for end-to-end analytical differentiation through the entire convex program. We implement our methodology in version 1.1 of CVXPY, a popular Python-embedded DSL for convex optimization, and additionally implement differentiable layers for disciplined convex programs in PyTorch and TensorFlow 2.0. Our implementation significantly lowers the barrier to using convex optimization problems in differentiable programs. We present applications in linear machine learning models and in stochastic control, and we show that our layer is competitive (in execution time) compared to specialized differentiable solvers from past work.},
+  langid = {english},
+  organization = {arXiv.org},
+  file = {/Users/carmine/Zotero/storage/RSYYBUCI/Agrawal et al_2019_Differentiable Convex Optimization Layers.pdf}
+}
+
+@article{henryGymANMReinforcementLearning2021,
+  title = {Gym-{{ANM}}: {{Reinforcement}} Learning Environments for Active Network Management Tasks in Electricity Distribution Systems},
+  shorttitle = {Gym-{{ANM}}},
+  author = {Henry, Robin and Ernst, Damien},
+  date = {2021-09-01},
+  journaltitle = {Energy and AI},
+  shortjournal = {Energy and AI},
+  volume = {5},
+  pages = {100092},
+  issn = {2666-5468},
+  doi = {10.1016/j.egyai.2021.100092},
+  url = {https://www.sciencedirect.com/science/article/pii/S266654682100046X},
+  urldate = {2024-05-29},
+  abstract = {Active network management (ANM) of electricity distribution networks include many complex stochastic sequential optimization problems. These problems need to be solved for integrating renewable energies and distributed storage into future electrical grids. In this work, we introduce Gym-ANM, a framework for designing reinforcement learning (RL) environments that model ANM tasks in electricity distribution networks. These environments provide new playgrounds for RL research in the management of electricity networks that do not require an extensive knowledge of the underlying dynamics of such systems. Along with this work, we are releasing an implementation of an introductory toy-environment, ANM6-Easy, designed to emphasize common challenges in ANM. We also show that state-of-the-art RL algorithms can already achieve good performance on ANM6-Easy when compared against a model predictive control (MPC) approach. Finally, we provide guidelines to create new Gym-ANM environments differing in terms of (a) the distribution network topology and parameters, (b) the observation space, (c) the modeling of the stochastic processes present in the system, and (d) a set of hyperparameters influencing the reward signal. Gym-ANM can be downloaded at https://github.com/robinhenry/gym-anm.},
+  keywords = {Active network management,Distribution networks,Gym-ANM,Reinforcement learning,Renewable energy},
+  file = {/Users/carmine/Zotero/storage/UGLJSZAD/Henry_Ernst_2021_Gym-ANM.pdf;/Users/carmine/Zotero/storage/CY74C4Z2/S266654682100046X.html}
+}
+
+@online{quintonJacobianDescentMultiObjective2024a,
+  title = {Jacobian {{Descent}} for {{Multi-Objective Optimization}}},
+  author = {Quinton, Pierre and Rey, Valérian},
+  date = {2024-06-23},
+  url = {https://arxiv.org/abs/2406.16232v1},
+  urldate = {2024-09-06},
+  abstract = {Many optimization problems are inherently multi-objective. To address them, we formalize Jacobian descent (JD), a direct generalization of gradient descent for vector-valued functions. Each step of this algorithm relies on a Jacobian matrix consisting of one gradient per objective. The aggregator, responsible for reducing this matrix into an update vector, characterizes JD. While the multi-task learning literature already contains a variety of aggregators, they often lack some natural properties. In particular, the update should not conflict with any objective and should scale proportionally to the norm of each gradient. We propose a new aggregator specifically designed to satisfy this. Emphasizing conflict between objectives, we then highlight direct applications for our methods. Most notably, we introduce instance-wise risk minimization (IWRM), a learning paradigm in which the loss of each training example is considered a separate objective. On simple image classification tasks, IWRM exhibits promising results compared to the direct minimization of the average loss. The performance of our aggregator in those experiments also corroborates our theoretical findings. Lastly, as speed is the main limitation of JD, we provide a path towards a more efficient implementation.},
+  langid = {english},
+  organization = {arXiv.org},
+  file = {/Users/carmine/Zotero/storage/KZLQ2WGS/Quinton_Rey_2024_Jacobian Descent for Multi-Objective Optimization.pdf}
+}
+
+@article{raissiPhysicsinformedNeuralNetworks2019a,
+  title = {Physics-Informed Neural Networks: {{A}} Deep Learning Framework for Solving Forward and Inverse Problems Involving Nonlinear Partial Differential Equations},
+  shorttitle = {Physics-Informed Neural Networks},
+  author = {Raissi, M. and Perdikaris, P. and Karniadakis, G. E.},
+  date = {2019-02-01},
+  journaltitle = {Journal of Computational Physics},
+  shortjournal = {Journal of Computational Physics},
+  volume = {378},
+  pages = {686--707},
+  issn = {0021-9991},
+  doi = {10.1016/j.jcp.2018.10.045},
+  url = {https://www.sciencedirect.com/science/article/pii/S0021999118307125},
+  urldate = {2024-09-09},
+  abstract = {We introduce physics-informed neural networks – neural networks that are trained to solve supervised learning tasks while respecting any given laws of physics described by general nonlinear partial differential equations. In this work, we present our developments in the context of solving two main classes of problems: data-driven solution and data-driven discovery of partial differential equations. Depending on the nature and arrangement of the available data, we devise two distinct types of algorithms, namely continuous time and discrete time models. The first type of models forms a new family of data-efficient spatio-temporal function approximators, while the latter type allows the use of arbitrarily accurate implicit Runge–Kutta time stepping schemes with unlimited number of stages. The effectiveness of the proposed framework is demonstrated through a collection of classical problems in fluids, quantum mechanics, reaction–diffusion systems, and the propagation of nonlinear shallow-water waves.},
+  keywords = {Data-driven scientific computing,Machine learning,Nonlinear dynamics,Predictive modeling,Runge–Kutta methods},
+  file = {/Users/carmine/Zotero/storage/IIBVCBP8/S0021999118307125.html}
+}

@@ -5,6 +5,7 @@ import pandas as pd
 from cvxpylayers.torch import CvxpyLayer
 from pickle import load
 from time import time
+from tqdm import trange
 import KKT_NN
 
 
@@ -20,10 +21,10 @@ generator_layer = CvxpyLayer(prob, parameters=[point, G, h], variables=[x])
 
 
 
-ds = load(open("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/loads/dataset_loads_comp.pkl", "rb"))
+ds = load(open("loads/dataset_loads_comp.pkl", "rb"))
 ds = np.stack([ds[i][0] for i in range(len(ds))])
 
-ds = torch.tensor(ds).to(dtype=torch.float64, device=device)
+ds = torch.tensor(ds).to(dtype=torch.float32, device=device)
 
 p, q, p_pot, p_max, q_max, p_plus, q_plus = ds[..., 0], ds[..., 1], ds[..., 2], ds[..., 3], ds[..., 4], ds[..., 5], ds[..., 6]
 
@@ -37,19 +38,19 @@ G_val = torch.Tensor(
                 [
                     [-1, 0], [1, 0], [1, 0], [0, -1], [0, 1], [0, 1], [0, -1]
                 ]
-            ).to(dtype=torch.float64, device=device).repeat(len(a), 1, 1)
+            ).to(dtype=torch.float32, device=device).repeat(len(a), 1, 1)
 
 G_val[..., -2 , 0] = tau1
 G_val[..., -1 , 0] = tau2
-h_val =torch.stack((torch.zeros(len(a), device = device, dtype=torch.float64), p_max, p_pot, q_max, q_max, rho1, -rho2), 1)
+h_val =torch.stack((torch.zeros(len(a), device = device, dtype=torch.float32), p_max, p_pot, q_max, q_max, rho1, -rho2), 1)
 
 model = KKT_NN.KKT_NN()
-model.net.load_state_dict(torch.load("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/loads/kkt_nn.pt", map_location = device))
+model.net.load_state_dict(torch.load("loads/kkt_nn.pt", map_location = device))
 model.net.to(device)
 
 kinn_times = []
 cvxpy_times = []
-for i in range(1, 1000):
+for i in trange(1, 1000):
     start_kinn = time()
     pred = model.net(ds[:i, ...])[0]
     end_kinn = time()

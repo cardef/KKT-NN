@@ -73,6 +73,7 @@ class Net(nn.Module):
             nn.LeakyReLU(),
             ResidualBlock(512),
             ResidualBlock(512),
+            ResidualBlock(512),
             nn.Linear(512, 9),
         ).to(dtype=torch.float32, device=device)
 
@@ -103,7 +104,7 @@ class KKT_NN():
         self.plateau = False
         self.terminated = False
         self.optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.998)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.9986)
         self.agg = UPGrad()
         self.coeffs = torch.ones(3, device=self.device, dtype=torch.float32)
         self.initial_losses = None
