@@ -117,26 +117,7 @@ class KKT_NN():
             ).to(dtype=torch.float32, device=device)
 
 
-    def coeff_rel_improv(self, losses, prev_losses):
-        with torch.no_grad():
-            coeff_rel_improv = 4 * torch.exp(
-                losses / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
-                - torch.max(
-                    losses / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
-                )
-            )
 
-            coeff_rel_improv /= torch.sum(
-                torch.exp(
-                    losses / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
-                    - torch.max(
-                        losses
-                        / (self.tau * prev_losses + torch.finfo(torch.float32).eps)
-                    )
-                )
-            )
-
-            return coeff_rel_improv
 
     def kkt_loss(self, actions, P_pots, P_max, Q_max, P_plus, Q_plus, sol, lambd):
 
@@ -165,20 +146,7 @@ class KKT_NN():
     
         losses = torch.stack([loss_stationarity, loss_g_ineq, loss_complementary])
         
-        if self.initial_losses is None:
-            self.initial_losses = losses
-
-        if self.previous_losses is None:
-            self.previous_losses = losses
-
-        #with torch.no_grad():
-            #self.coeffs = self.alpha*(beta*self.coeffs + (1-beta)*self.coeff_rel_improv(losses, self.initial_losses)) + (1-self.alpha)*self.coeff_rel_improv(losses, self.previous_losses)
-            #self.coeffs = self.coeffs / (self.coeffs[0] + torch.finfo(torch.float32).eps)
-            #self.coeffs[0] = self.alpha*self.coeffs[0]*(1-self.alpha)*self.loss_grad_std_wn(loss_stationarity, self.net)
-            #self.coeffs[1] = self.alpha*self.coeffs[1]*(1-self.alpha)*self.loss_grad_std_wn(loss_g_ineq, self.net)
-            #self.coeffs[2] = self.alpha*self.coeffs[2]*(1-self.alpha)*self.loss_grad_std_wn(loss_complementary, self.net)
-            
-            self.previous_losses = losses
+       
 
         return (
             self.coeffs@losses + 0.0*loss_sparsity,
