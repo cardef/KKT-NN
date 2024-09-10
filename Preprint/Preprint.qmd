@@ -55,7 +55,7 @@ $$
 
 where $x \in \mathcal{D} \subseteq\mathbb{R}^n$ is the optimization variable; $\theta \in \mathcal{D}_\theta \subseteq \mathbb{R}^k$ are the parameters defining the problem; $f: \mathcal{D}_f \subseteq\mathbb{R}^n \times \mathbb{R}^k \to \mathbb{R}$ is the convex cost function; $g_i: \mathcal{D}_{g_i} \subseteq\mathbb{R}^n \times \mathbb{R}^k \to \mathbb{R}$ are the convex inequality constraints, $A: \mathcal{D}_\theta \to \mathbb{R}^{p \times n}$ and $b: \mathcal{D}_\theta \to \mathbb{R}^{p}$ defines the affine equality constraints and $\mathcal{D} = \bigcap_{i=1}^{m} \mathcal{D}_{g_i} \cap \mathcal{D}_{f}$ is the domain of the optimization problem.
 
-Assume differentiable cost and constraints functions and that $g_i$ satisfies Slater's condition. Given a set of parameters $\theta$, $x^* \in \mathcal{D}$ is optimal if and only if there are $\lambda^*$ and $\nu^*$ that, with $x^*$, satisy the Karush-Kuhn-Tucker conditions (KKT):
+Assume differentiable cost and constraints functions and that $g_i$ satisfies Slater's condition. Given a set of parameters $\theta$, $x^* \in \mathcal{D}$ is optimal if and only if there are $\lambda^*$ and $\nu^*$ that, with $x^*$, satisy the Karush-Kuhn-Tucker conditions (KKT) [@boydConvexOptimization2004]:
 
 ```{=tex}
 \begin{align}
@@ -68,7 +68,7 @@ Assume differentiable cost and constraints functions and that $g_i$ satisfies Sl
 ```
 # Proposed method
 
-KKT-Informed Neural Network (KINN) builds upon the principles of Physics-Informed Neural Networks (PINNs), inducing compliance with Karush-Kuhn-Tucker (KKT) through a learning bias, directly coding their violation into the loss function that will be minimized in the training phase.
+KKT-Informed Neural Network (KINN) builds upon the principles of Physics-Informed Neural Networks (PINNs) [@raissiPhysicsinformedNeuralNetworks2019a], inducing compliance with Karush-Kuhn-Tucker (KKT) through a learning bias, directly coding their violation into the loss function that will be minimized in the training phase.
 
 The network is designed as a multi-layer perceptron (MLP) and processes a batch of $B$ problem parameters $\Theta \in \mathbb{R}^{B \times k}$, $\Theta_i = \theta^{(i)}$. The network outputs $\hat{X}$, $\hat\Lambda$, $\hat{N}$. A ReLU function is placed at the end of the branch predicting $\hat\Lambda$ to ensure its feasability.
 
@@ -211,7 +211,7 @@ With associated KKT conditions:
 The problem described has a two-dimensional optimization variable, seven scalar parameters and seven constraints:
 
 \begin{equation}
- (X, \Lambda) = \mathrm{KINN}(\Theta)
+ [X, \Lambda] = \mathrm{KINN}(\Theta)
 \end{equation}
 
 with: 
@@ -303,11 +303,13 @@ To evaluate the approach presented here, the “cvxpylayers” library [@agrawal
 
 The metrics for validation were the mean absolute error (MAE) and $R^2$. Last values shown in  [@tbl-eval], , while the evolution along the various steps is in [@fig-val].
 
+By increasing the number of points, an inference time comparison was also performed on an Apple M2 Pro processor with backend for PyTorch's MPS. The difference is remarkable, about two orders of magnitude (@fig-times): with a batch size of $1000$, cvxpylayers took $2.35~\textrm{s}$ as opposed to KINN's $0.06~\textrm{s}$.
+
 | Mertric            | Value  |
 |:---------------:|:------:|
 | MAE| 0.0056 p.u.|
 | $R^{2}$  | 0.9972 |
-: Finae values {#tbl-eval}
+: Evaluation metrics {#tbl-eval}
 
 ```{python}
 #| label: fig-val
@@ -340,7 +342,7 @@ r2 = pd.read_csv("plots/r2.csv")[55:]
 plt.plot(r2['Step'], r2['Value'])
 plt.tight_layout()
 plt.xlabel("Step")
-plt.ylabel("MAE")
+plt.ylabel("$R^2$")
 plt.show()
 ```
 ```{python}
@@ -366,8 +368,11 @@ plt.show()
 ```
 # Conclusions
 
+KKT-Informed Neural Network (KINN) was introduced, a neural network-based approach for solving parametric convex optimization problems. The method leverages the Karush-Kuhn-Tucker (KKT) conditions as a learning bias, integrating them into the loss function to ensure that the network’s predictions adhere to the necessary optimality criteria. This allows the network to efficiently estimate solutions while sacrificing some degree of guaranteed optimality in favor of significant improvements in computational speed and scalability.
 
+The experimental results from the provided test case demonstrated that KINN is highly effective in providing near-optimal solutions while enabling parallel problem-solving. The comparison with traditional tools, highlighted KINN's ability to solve optimization problems in a fraction of the time, with minimal loss of accuracy. Metrics such as mean absolute error (MAE) and $R^2$ confirm that KINN produces reliable solutions within acceptable tolerances for real-world applications. Although some optimality is traded for speed, KINN provides a highly practical tool for scenarios where rapid decision-making is critical.
+
+In future work, the potential for expanding this approach to handle non-convex optimization problems will be explored. Additionally, hybrid architectures that combine KINN with traditional optimization methods may offer further improvements in performance, providing a balance between speed and guaranteed optimality across a broader range of problem domains.
 # References{.unnumbered}
 
 ::: {#refs}
-:::

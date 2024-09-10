@@ -246,7 +246,8 @@ Assume differentiable cost and constraints functions and that \(g_i\)
 satisfies Slater's condition. Given a set of parameters \(\theta\),
 \(x^* \in \mathcal{D}\) is optimal if and only if there are
 \(\lambda^*\) and \(\nu^*\) that, with \(x^*\), satisy the
-Karush-Kuhn-Tucker conditions (KKT):
+Karush-Kuhn-Tucker conditions (KKT)
+\autocite{boydConvexOptimization2004}:
 
 \begin{align}
     A(\theta) x^* - b(\theta) = 0&\\
@@ -259,10 +260,11 @@ Karush-Kuhn-Tucker conditions (KKT):
 \section{Proposed method}\label{proposed-method}
 
 KKT-Informed Neural Network (KINN) builds upon the principles of
-Physics-Informed Neural Networks (PINNs), inducing compliance with
-Karush-Kuhn-Tucker (KKT) through a learning bias, directly coding their
-violation into the loss function that will be minimized in the training
-phase.
+Physics-Informed Neural Networks (PINNs)
+\autocite{raissiPhysicsinformedNeuralNetworks2019a}, inducing compliance
+with Karush-Kuhn-Tucker (KKT) through a learning bias, directly coding
+their violation into the loss function that will be minimized in the
+training phase.
 
 The network is designed as a multi-layer perceptron (MLP) and processes
 a batch of \(B\) problem parameters
@@ -424,7 +426,7 @@ The problem described has a two-dimensional optimization variable, seven
 scalar parameters and seven constraints:
 
 \begin{equation}
- (X, \Lambda) = \mathrm{KINN}(\Theta)
+ [X, \Lambda] = \mathrm{KINN}(\Theta)
 \end{equation}
 
 with: \begin{align}
@@ -525,8 +527,14 @@ The metrics for validation were the mean absolute error (MAE) and
 \(R^2\). Last values shown in Table~\ref{tbl-eval}, , while the
 evolution along the various steps is in Figure~\ref{fig-val}.
 
+By increasing the number of points, an inference time comparison was
+also performed on an Apple M2 Pro processor with backend for PyTorch's
+MPS. The difference is remarkable, about two orders of magnitude
+(Figure~\ref{fig-times}): with a batch size of \(1000\), cvxpylayers
+took \(2.35~\textrm{s}\) as opposed to KINN's \(0.06~\textrm{s}\).
+
 \begin{longtable}[]{@{}cc@{}}
-\caption{Finae values}\label{tbl-eval}\tabularnewline
+\caption{Evaluation metrics}\label{tbl-eval}\tabularnewline
 \toprule\noalign{}
 Mertric & Value \\
 \midrule\noalign{}
@@ -584,6 +592,33 @@ MAE & 0.0056 p.u. \\
 \end{figure}%
 
 \section{Conclusions}\label{conclusions}
+
+KKT-Informed Neural Network (KINN) was introduced, a neural
+network-based approach for solving parametric convex optimization
+problems. The method leverages the Karush-Kuhn-Tucker (KKT) conditions
+as a learning bias, integrating them into the loss function to ensure
+that the network's predictions adhere to the necessary optimality
+criteria. This allows the network to efficiently estimate solutions
+while sacrificing some degree of guaranteed optimality in favor of
+significant improvements in computational speed and scalability.
+
+The experimental results from the provided test case demonstrated that
+KINN is highly effective in providing near-optimal solutions while
+enabling parallel problem-solving. The comparison with traditional
+tools, highlighted KINN's ability to solve optimization problems in a
+fraction of the time, with minimal loss of accuracy. Metrics such as
+mean absolute error (MAE) and \(R^2\) confirm that KINN produces
+reliable solutions within acceptable tolerances for real-world
+applications. Although some optimality is traded for speed, KINN
+provides a highly practical tool for scenarios where rapid
+decision-making is critical.
+
+In future work, the potential for expanding this approach to handle
+non-convex optimization problems will be explored. Additionally, hybrid
+architectures that combine KINN with traditional optimization methods
+may offer further improvements in performance, providing a balance
+between speed and guaranteed optimality across a broader range of
+problem domains.
 
 \section*{References}\label{references}
 \addcontentsline{toc}{section}{References}
