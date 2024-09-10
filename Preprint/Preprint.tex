@@ -20,7 +20,7 @@
 \usepackage{lmodern}
 \ifPDFTeX\else  
     % xetex/luatex font selection
-    \setmainfont[]{Latin Modern Roman}
+  \setmainfont[]{Latin Modern Roman}
   \setmathfont[]{Latin Modern Math}
 \fi
 % Use upquote if available, for straight quotes in verbatim environments
@@ -43,28 +43,14 @@
 \setlength{\emergencystretch}{3em} % prevent overfull lines
 \setcounter{secnumdepth}{5}
 % Make \paragraph and \subparagraph free-standing
-\makeatletter
 \ifx\paragraph\undefined\else
   \let\oldparagraph\paragraph
-  \renewcommand{\paragraph}{
-    \@ifstar
-      \xxxParagraphStar
-      \xxxParagraphNoStar
-  }
-  \newcommand{\xxxParagraphStar}[1]{\oldparagraph*{#1}\mbox{}}
-  \newcommand{\xxxParagraphNoStar}[1]{\oldparagraph{#1}\mbox{}}
+  \renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
 \fi
 \ifx\subparagraph\undefined\else
   \let\oldsubparagraph\subparagraph
-  \renewcommand{\subparagraph}{
-    \@ifstar
-      \xxxSubParagraphStar
-      \xxxSubParagraphNoStar
-  }
-  \newcommand{\xxxSubParagraphStar}[1]{\oldsubparagraph*{#1}\mbox{}}
-  \newcommand{\xxxSubParagraphNoStar}[1]{\oldsubparagraph{#1}\mbox{}}
+  \renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
 \fi
-\makeatother
 
 
 \providecommand{\tightlist}{%
@@ -139,7 +125,6 @@
 \@ifpackageloaded{caption}{}{\usepackage{caption}}
 \@ifpackageloaded{subcaption}{}{\usepackage{subcaption}}
 \makeatother
-
 \ifLuaTeX
   \usepackage{selnolig}  % disable illegal ligatures
 \fi
@@ -161,7 +146,6 @@ Optimization, Karush-Kuhn-Tucker (KKT) Conditions, Neural Networks},
   urlcolor={Blue},
   pdfcreator={LaTeX via pandoc}}
 
-
 \newcommand{\runninghead}{A Preprint }
 \title{KKT-Informed Neural Network}
 \usepackage{etoolbox}
@@ -170,7 +154,7 @@ Optimization, Karush-Kuhn-Tucker (KKT) Conditions, Neural Networks},
   \apptocmd{\@title}{\par {\large #1 \par}}{}{}
 }
 \makeatother
-\subtitle{A Parallel Solver for Parametric Convex Optimization Problem}
+\subtitle{A Parallel Solver for Parametric Convex Optimization Problems}
 \def\asep{\\\\\\ } % default: all authors on same column
 \author{\textbf{Carmine Delle Femine}\\Department of Data Intelligence
 for Energy and Industrial Processes\\Vicomtech Foundation\\Donostia-San
@@ -179,10 +163,10 @@ Sebastián,\ 20009\\\href{mailto:cdellefemine@vicomtech.org}{cdellefemine@vicomt
 \begin{document}
 \maketitle
 \begin{abstract}
-It's presented a neural network-based approach for solving parametric
-convex optimization problems, where the network estimates the optimal
-points given a batch of input parameters. The network is trained by
-penalizing violations of the Karush-Kuhn-Tucker (KKT) conditions,
+A neural network-based approach for solving parametric convex
+optimization problems is presented, where the network estimates the
+optimal points given a batch of input parameters. The network is trained
+by penalizing violations of the Karush-Kuhn-Tucker (KKT) conditions,
 ensuring that its predictions adhere to these optimality criteria.
 Additionally, since the bounds of the parameter space are known,
 training batches can be randomly generated without requiring external
@@ -197,7 +181,6 @@ Optimization \sep Karush-Kuhn-Tucker (KKT) Conditions \sep
 Neural Networks
 
 
-
 \section{Introduction}\label{introduction}
 
 Solving convex optimization problems is essential across numerous
@@ -208,14 +191,12 @@ parameters. Achieving fast solutions, even at the cost of strict
 optimality guarantees, is often a priority.
 
 Neural networks, with their inherent ability to process data in parallel
-and adapt to diverse problem structures, offer a promising solution. In
-this work, we introduce the KKT-Informed Neural Network (KINN), a method
+and adapt to diverse problem structures, offer a promising solution.
+This work introduces the KKT-Informed Neural Network (KINN), a method
 designed to solve parametric convex optimization problems efficiently by
-integrating the KKT conditions into the network's learning process. By
-doing so, we enable the rapid, parallel solving of optimization problems
-while balancing the trade-off between speed and guaranteed optimality.
-
-\section{State of the art}\label{state-of-the-art}
+integrating the KKT conditions into the network's learning process. This
+approach enables rapid, parallel problem-solving while balancing the
+trade-off between speed and guaranteed optimality.
 
 \section{Background}\label{background}
 
@@ -270,8 +251,8 @@ The network is designed as a multi-layer perceptron (MLP) and processes
 a batch of \(B\) problem parameters
 \(\Theta \in \mathbb{R}^{B \times k}\), \(\Theta_i = \theta^{(i)}\). The
 network outputs \(\hat{X}\), \(\hat\Lambda\), \(\hat{N}\). A ReLU
-function is placed at the end of the branch predicting \(\hat\Lambda\)
-to ensure its feasability.
+function is applied to the branch predicting \(\hat\Lambda\) to ensure
+its feasibility.
 
 \begin{align}
 [\hat{X}, \hat{\Lambda}, \hat{N}] &= \textrm{KINN}(\Theta)\\
@@ -284,13 +265,13 @@ Vector-valued loss function consists of four terms that correspond to
 each KKT conditions:
 
 \begin{equation}
-\mathcal{L} = \frac{1}{B}\biggl(\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{E}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}\biggl) 
+\mathcal{L} = \frac{1}{B}\biggr[\sum_{i=1}^B\mathcal{L}_{S}^{(i)}, \sum_{i=1}^B\mathcal{L}_{I}^{(i)}, \sum_{i=1}^B\mathcal{L}_{E}^{(i)}, \sum_{i=1}^B\mathcal{L}_{C}^{(i)}\biggr] 
 \end{equation}
 
 where:
 
 \begin{align}
-    \mathcal{L}_{S} =& \|\nabla_{\hat{x}^{(i)}} f(\hat{x}^{(i)}, \theta^{(i)}) + \sum\nolimits_{j=1}^m \hat{\lambda}^{(i)}_j\nabla_{\hat{x}^{(i)}} g_j(\hat{x}^{(i)}, \theta^{(i)}) + A(\theta^{(i)})^T\hat{\nu}^{(i)}\|_2\\ 
+    \mathcal{L}_{S}^{(i)} =& \|\nabla_{\hat{x}^{(i)}} f(\hat{x}^{(i)}, \theta^{(i)}) + \sum\nolimits_{j=1}^m \hat{\lambda}^{(i)}_j\nabla_{\hat{x}^{(i)}} g_j(\hat{x}^{(i)}, \theta^{(i)}) + A(\theta^{(i)})^T\hat{\nu}^{(i)}\|_2\\ 
     \mathcal{L}_{I}^{(i)}  =& \|(\max(0, g_1(\hat{x}^{(i)}, \theta^{(i)})),\dots,\max(0, g_m(\hat{x}^{(i)}, \theta^{(i)})))\|_2\\
     \mathcal{L}_{E}^{(i)} =& \|A(\theta^{(i)}) \hat{x}^{(i)} - b(\theta^{(i)})\|_2\\
     \mathcal{L}_{C}^{(i)}  =& \|(\hat{\lambda}_1^{(i)} g_1(\hat{x}^{(i)}, \theta^{(i)}),\dots,\hat{\lambda}_m^{(i)} g_m(\hat{x}^{(i)}, \theta^{(i)}))\|_2\\
@@ -308,8 +289,8 @@ be \(\mathcal{A}(\mathcal{J})\). The aggregator chosen is
 
 \section{Case study}\label{case-study}
 
-We consider a renewable energy generator in a power grid as a test case
-for this approach. The generator's active and reactive power injections
+A renewable energy generator in a power grid is used as a test case for
+this approach.. The generator's active and reactive power injections
 \((P,Q)\) are controllable, but they must adhere to physical
 constraints. As such, the desired setpoints \((a_P, a_Q)\) must be
 projected onto the feasible set defined by these constraints. This
@@ -317,7 +298,15 @@ problem is taken from \autocite{henryGymANMReinforcementLearning2021}.
 
 \subsection{Problem description}\label{problem-description}
 
-\begin{equation}
+The feasible set \(\mathcal{D}\) (shown in {[}\ref{fig-set}{]}) is
+defined by the physical parameters of the generator
+\(\overline{P}_g \in \mathbb{R}_0⁺\), \(P⁺_g \in ]0, \overline{P}_g]\),
+\(\overline{Q}_g \in \mathbb{R}_0⁺\), \(Q⁺_g \in ]0, \overline{Q}_g]\),
+characterizing the minimum and maximum possible values and the
+relationships between active and reactive power, and the dynamic value
+\(P^{\textrm{(max)}}_{g,t}\) which indicates the maximum power that can
+be generated at that time given the external conditions (e.g.~wind
+speed, solar radiation, etc.): \begin{equation}
 \mathcal{D} = \{(P, Q) \in \mathbb{R}² | 0 \leq P \leq P^{\textrm{(max)}}_{g,t}, -\overline{Q}_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
 \end{equation}
 
@@ -378,16 +367,6 @@ where:
 \end{center}
 \caption{Feasibile set $\mathcal{D}$} \label{fig-set}
 \end{figure}
-
-The feasible set \(\mathcal{D}\) (shown in {[}\ref{fig-set}{]}) is
-defined by the physical parameters of the generator
-\(\overline{P}_g \in \mathbb{R}_0⁺\), \(P⁺_g \in ]0, \overline{P}_g]\),
-\(\overline{Q}_g \in \mathbb{R}_0⁺\), \(Q⁺_g \in ]0, \overline{Q}_g]\),
-characterizing the minimum and maximum possible values and the
-relationships between active and reactive power, and the dynamic value
-\(P^{\textrm{(max)}}_{g,t}\) which indicates the maximum power that can
-be generated at that time given the external conditions (e.g.~wind
-speed, solar radiation, etc.):
 
 The problem could be stated in standard form as:
 
@@ -587,13 +566,13 @@ MAE & 0.0056 p.u. \\
 
 }
 
-\caption{\label{fig-times}Computation time compariso}
+\caption{\label{fig-times}Computation time comparison}
 
 \end{figure}%
 
 \section{Conclusions}\label{conclusions}
 
-KKT-Informed Neural Network (KINN) was introduced, a neural
+KKT-Informed Neural Network (KINN) was introduced as a neural
 network-based approach for solving parametric convex optimization
 problems. The method leverages the Karush-Kuhn-Tucker (KKT) conditions
 as a learning bias, integrating them into the loss function to ensure
@@ -620,13 +599,8 @@ may offer further improvements in performance, providing a balance
 between speed and guaranteed optimality across a broader range of
 problem domains.
 
-\section*{References}\label{references}
-\addcontentsline{toc}{section}{References}
 
-\printbibliography[heading=none]
-
-
-
+\printbibliography
 
 
 \end{document}

@@ -81,9 +81,11 @@ class Net(nn.Module):
         y = self.mlp(X)
 
         sol = torch.nn.functional.softmax(y[..., :-2], dim = 1)
-        lambd = torch.nn.functional.relu(y[..., 5:])
-
-        return y[..., :5], lambd
+        lambda_ = torch.nn.functional.relu(y[..., 5:10])
+        mu = torch.nn.functional.relu(y[..., 10:15])
+        nu = torch.nn.functional.relu(y[..., 15:20])
+        rho = torch.nn.functional.relu(y[..., 20:25])
+        return y[..., :5], lambda_, mu, nu, rho
 
 
 class KKT_NN():
@@ -98,6 +100,7 @@ class KKT_NN():
         self.horizon = 5
         self.n_iter = 0
         self.eps = 1e-4
+        self.batch_size = 1024
         self.es= EarlyStopper(patience = 1000)
         self.plateau = False
         self.terminated = False
@@ -105,57 +108,88 @@ class KKT_NN():
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma =0.9986)
         self.agg = UPGrad()
 
+    def cost(U, x_t, x_ref, a, b, q, r):
+        cost_value = 0
+        x = x_t
+        for t in range(self.horizon):
+            U_t = U[:, t, :]  # controllo al passo t
+            x = a.unsqueeze(1) * x + b.unsqueeze(1) * U_t  # aggiornamento dello stato
+            cost_value += q.unsqueeze(1) * (x - x_ref[:, t, :]).pow(2) + r.unsqueeze(1) * U_t.pow(2)
+        return cost_value.sum()
 
+# Gradiente della funzione di costo rispetto a U
+    def grad_cost(self, U, x_t, x_ref, a, b, q, r):
+        grad = torch.zeros_like(U)
+        x = x_t
+        for t in range(self.horizon):
+            U_t = U[:, t, :]
+            x_next = a.unsqueeze(1) * x + b.unsqueeze(1) * U_t
+            grad[:, t, :] = 2 * b.unsqueeze(1) * q.unsqueeze(1) * (x_next - x_ref[:, t, :]) + 2 * r.unsqueeze(1) * U_t
+            x = x_next
+        return grad
 
+# Funzione obiettivo basata sulle condizioni KKT
+    def kkt_loss(self, U, lambda_, mu, nu, rho, x_t, x_ref, a, b, q, r):
 
-    def kkt_loss(self, pen, a, b, t, t_ref, sol, lambd):
+        U_min = torch.zeros(self.batch_size, 1)
+        U_max = torch.ones(self.batch_size, 1)
+        T_min = torch.zeros(self.batch_size, 1)
+        T_max = torch.ones(self.batch_size, 1)
+        T_min = T_min.unsqueeze(1).expand(self.batch_size, self.horizon, 1)
+        T_max = T_max.unsqueeze(1).expand(self.batch_size, self.horizon, 1)
+        # 1. Violazione della stazionarietà
+        grad_J = self.grad_cost(U, x_t, x_ref, a, b, q, r)
+        grad_ineq_control = lambda_ - mu
+        grad_ineq_state = -b.unsqueeze(1).unsqueeze(2) * nu + b.unsqueeze(1).unsqueeze(2) * rho
+        stationarity_violation = (grad_J + grad_ineq_control + grad_ineq_state).pow(2).sum()
 
-        Q = torch.eye(self.horizon, device=self.device)
-        L = torch.eye(self.horizon, device=self.device).repeat(1024,1,1)
-        for i in range(1024):
-            L[i,...] *= pen[i]
-        I = torch.eye(self.horizon)
-        A = torch.tensor([[a[j]**(i+1) for i in range(self.horizon)] for j in range(1024)], device=self.device)
-        B = torch.tensor([[[a[k]**(i-1) * b[k] for i in range(j, 0, -1)] + [0]*(self.horizon-j) for j in range(1, self.horizon+1)]for k in range(1024)], device=self.device)
-       #grad_g = torch.bmm(lambd.unsqueeze(1), G_val).squeeze()
-        grad_f = torch.bmm(B, torch.bmm(A.unsqueeze(-1), t.unsqueeze(1).unsqueeze(2)).squeeze() + torch.bmm(B, sol.unsqueeze(2)).squeeze() - t_ref.repeat(self.horizon, 1).T.unsqueeze(-1))
-        g_ineq = torch.bmm(G_val, sol.unsqueeze(2)).squeeze() - h_val
-        stationarity = grad_f + grad_g
-        complementary = lambd * g_ineq
-        loss_stationarity = torch.norm(stationarity, p=2, dim=1).mean()
-        loss_g_ineq = torch.norm(torch.relu(g_ineq), p=2, dim=1).mean()
-        loss_complementary = torch.norm(complementary, p=2, dim=1).mean()
-        loss_sparsity = torch.norm(sol, p=1)
-
+        # 2. Violazione della primal feasibility (controlli e stati)
+        control_feasibility = (torch.max(U_min.unsqueeze(1) - U, torch.zeros_like(U)) + torch.max(U - U_max.unsqueeze(1), torch.zeros_like(U))).pow(2).sum()
         
-    
-        losses = torch.stack([loss_stationarity, loss_g_ineq, loss_complementary])
-        
-       
+        x = x_t
+        state_feasibility = 0
+        for t in range(self.horizon):
+            U_t = U[:, t, :]
+            x = a.unsqueeze(1) * x + b.unsqueeze(1) * U_t
+            state_feasibility += (torch.max(T_min - x, torch.zeros_like(x)) + torch.max(x - T_max, torch.zeros_like(x))).pow(2).sum()
 
-        return (
-            self.coeffs@losses + 0.0*loss_sparsity,
-            loss_stationarity,
-            loss_g_ineq,
-            loss_complementary,
-        )
+        # 3. Violazione della complementarità
+        comp_control = lambda_ * (U - U_min.unsqueeze(1)) + mu * (U_max.unsqueeze(1) - U)
+        comp_state = 0
+        x = x_t
+        for t in range(self.horizon):
+            U_t = U[:, t, :]
+            x_next = a.unsqueeze(1) * x + b.unsqueeze(1) * U_t
+            comp_state += (nu * (T_min - t_next) + rho * (t_next - T_max)).pow(2).sum()
+
+            x = x_next
+        comp_loss = comp_control.pow(2).sum() + comp_state
+
+        # 4. Violazione della dual feasibility
+        dual_feasibility = (torch.min(lambda_, torch.zeros_like(lambda_)).pow(2) + torch.min(mu, torch.zeros_like(mu)).pow(2) +
+                            torch.min(nu, torch.zeros_like(nu)).pow(2) + torch.min(rho, torch.zeros_like(rho)).pow(2)).sum()
+
+        # Somma delle violazioni
+        return stationarity_violation + control_feasibility + state_feasibility + comp_loss + dual_feasibility
+
+
 
     def training_step(self):
         self.net.train()
         
         
-        pen = torch.rand((1024), device = self.device, dtype=torch.float32)
-        a = torch.rand((1024), device = self.device, dtype=torch.float32)
-
-        b = torch.rand((1024), device = self.device, dtype=torch.float32)
-        t = torch.rand((1024), device = self.device, dtype=torch.float32)
-        t_ref = torch.rand((1024), device = self.device, dtype=torch.float32)
+        r = torch.rand((self.batch_size), device = self.device, dtype=torch.float32)
+        a = torch.rand((self.batch_size), device = self.device, dtype=torch.float32)
+        q = torch.ones(self.batch_size, device=self.device)
+        b = torch.rand((self.batch_size), device = self.device, dtype=torch.float32)
+        x_t = torch.rand((self.batch_size), device = self.device, dtype=torch.float32)
+        x_ref = torch.rand((self.batch_size), device = self.device, dtype=torch.float32)
 
         
         
         def closure():
-            sol, lambd = self.net(torch.stack([pen, a, b, t, t_ref], 1))
-            kkt_loss, stationarity, g_ineq, complementary = self.kkt_loss(pen, a, b, t, t_ref, sol, lambd
+            sol, lambda_, mu, nu, rho = self.net(torch.stack([r, a, b, x_t, x_ref], 1))
+            kkt_loss, stationarity, g_ineq, complementary = self.kkt_loss(sol.unsqueeze(-1), lambda_.unsqueeze(-1), mu.unsqueeze(-1), nu.unsqueeze(-1), rho.unsqueeze(-1), x_t.unsqueeze(-1), x_ref.repeat(self.horizon, 1, 1).permute(2,0,1), a, b, q, r
             )
 
             self.optimizer.zero_grad()
