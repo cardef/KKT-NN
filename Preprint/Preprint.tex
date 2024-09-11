@@ -79,7 +79,6 @@
 \makeatother
 
 \usepackage{amsmath}
-\usepackage{tikz}
 \usepackage{arxiv}
 \usepackage{orcidlink}
 \usepackage{amsmath}
@@ -129,7 +128,7 @@
   \usepackage{selnolig}  % disable illegal ligatures
 \fi
 \usepackage[]{biblatex}
-\addbibresource{bibliography.bib}
+\addbibresource{Preprint.bib}
 \usepackage{bookmark}
 
 \IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
@@ -146,6 +145,7 @@ Optimization, Karush-Kuhn-Tucker (KKT) Conditions, Neural Networks},
   urlcolor={Blue},
   pdfcreator={LaTeX via pandoc}}
 
+\renewcommand{\today}{September 11, 2024}
 \newcommand{\runninghead}{A Preprint }
 \title{KKT-Informed Neural Network}
 \usepackage{etoolbox}
@@ -159,7 +159,7 @@ Optimization, Karush-Kuhn-Tucker (KKT) Conditions, Neural Networks},
 \author{\textbf{Carmine Delle Femine}\\Department of Data Intelligence
 for Energy and Industrial Processes\\Vicomtech Foundation\\Donostia-San
 Sebastián,\ 20009\\\href{mailto:cdellefemine@vicomtech.org}{cdellefemine@vicomtech.org}}
-\date{}
+\date{September 11, 2024}
 \begin{document}
 \maketitle
 \begin{abstract}
@@ -256,9 +256,9 @@ its feasibility.
 
 \begin{align}
 [\hat{X}, \hat{\Lambda}, \hat{N}] &= \textrm{KINN}(\Theta)\\
-\hat{X} \in \mathbb{R}^{B\times n}&, \quad \hat X_i = x^{(i)}\\
-\hat{\Lambda} \in \mathbb{R}^{0^{B\times m}}_+&, \quad \hat\Lambda_i = \lambda^{(i)}\\
-\hat{N} \in \mathbb{R}^{B\times p}&, \quad \hat{N}_i = \nu^{(i)}
+\hat{X} \in \mathbb{R}^{B\times n}&, \quad \hat X_i = \hat{x}^{(i)}\\
+\hat{\Lambda} \in \mathbb{R}^{0^{B\times m}}_+&, \quad \hat\Lambda_i = \hat\lambda^{(i)}\\
+\hat{N} \in \mathbb{R}^{B\times p}&, \quad \hat{N}_i = \hat\nu^{(i)}
 \end{align}
 
 Vector-valued loss function consists of four terms that correspond to
@@ -298,25 +298,27 @@ problem is taken from \autocite{henryGymANMReinforcementLearning2021}.
 
 \subsection{Problem description}\label{problem-description}
 
-The feasible set \(\mathcal{D}\) (shown in {[}\ref{fig-set}{]}) is
+The feasible set \(\mathcal{D}\) (shown in Figure \(\ref{fig:set}\)) is
 defined by the physical parameters of the generator
-\(\overline{P}_g \in \mathbb{R}_0⁺\), \(P⁺_g \in ]0, \overline{P}_g]\),
-\(\overline{Q}_g \in \mathbb{R}_0⁺\), \(Q⁺_g \in ]0, \overline{Q}_g]\),
-characterizing the minimum and maximum possible values and the
-relationships between active and reactive power, and the dynamic value
-\(P^{\textrm{(max)}}_{g,t}\) which indicates the maximum power that can
-be generated at that time given the external conditions (e.g.~wind
-speed, solar radiation, etc.): \begin{equation}
+\(\overline{P}_g \in \mathbb{R}_0^+\),
+\(P^+_g \in ]0, \overline{P}_g]\),
+\(\overline{Q}_g \in \mathbb{R}_0^+\),
+\(Q^+_g \in ]0, \overline{Q}_g]\), characterizing the minimum and
+maximum possible values and the relationships between active and
+reactive power, and the dynamic value \(P^{\textrm{(max)}}_{g,t}\) which
+indicates the maximum power that can be generated at that time given the
+external conditions (e.g.~wind speed, solar radiation, etc.):
+\begin{equation}
 \mathcal{D} = \{(P, Q) \in \mathbb{R}² | 0 \leq P \leq P^{\textrm{(max)}}_{g,t}, -\overline{Q}_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
 \end{equation}
 
 where:
 
 \begin{align}
-    \tau^{(1)}_g &= \frac{Q_g⁺ - \overline{Q}_g}{\overline{P_g} - P_g⁺}\\
-    \rho^{(1)}_g &= \overline{Q}_g - \tau^{(1)}_gP_g⁺\\
-    \tau^{(2)}_g &= \frac{\overline{Q}_g -Q_g^+ }{\overline{P_g} - P_g⁺}\\
-    \rho^{(2)}_g &= -\overline{Q}_g - \tau^{(2)}_gP_g⁺  \\
+    \tau^{(1)}_g &= \frac{Q_g^+ - \overline{Q}_g}{\overline{P_g} - P_g^+}\\
+    \rho^{(1)}_g &= \overline{Q}_g - \tau^{(1)}_gP_g^+\\
+    \tau^{(2)}_g &= \frac{\overline{Q}_g -Q_g^+ }{\overline{P_g} - P_g^+}\\
+    \rho^{(2)}_g &= -\overline{Q}_g - \tau^{(2)}_gP_g^+  \\
 \end{align}
 
 \begin{figure}
@@ -343,7 +345,7 @@ where:
 % Etichette per Q
 \node at (-0.5,3) {$\overline{Q}_g$};
 \node at (-0.5,2) {$Q_g^+$};
-\node at (-0.5,-2) {$-Q_g⁺$};
+\node at (-0.5,-2) {$-Q_g^+$};
 \node at (-0.5,-3) {$-\overline{Q}_g$};
 
 % Etichette per P
@@ -365,7 +367,7 @@ where:
 \draw[->] (0,-3.5) -- (0,3.5) node[above] {$Q$};
 \end{tikzpicture}
 \end{center}
-\caption{Feasibile set $\mathcal{D}$} \label{fig-set}
+\caption{Feasibile set $\mathcal{D}$} \label{fig:set}
 \end{figure}
 
 The problem could be stated in standard form as:
@@ -393,10 +395,10 @@ h = \begin{pmatrix}
 \end{equation}
 
 With associated KKT conditions: \begin{align}
-    G\hat{x} - h \leq 0&\\
+    G{x}^* - h \leq 0&\\
     \lambda_i^* \geq 0& \quad i=1,\dots, 7\\
-    G^T\hat\lambda = 0&\\
-    (a-\hat{x}) + G^T\hat\lambda  = 0 &
+    G^T\lambda^* = 0&\\
+    (a-{x}^*) + G^T\lambda^*  = 0 &
 \end{align}
 
 \subsection{Experimental results}\label{experimental-results}
@@ -405,17 +407,18 @@ The problem described has a two-dimensional optimization variable, seven
 scalar parameters and seven constraints:
 
 \begin{equation}
- [X, \Lambda] = \mathrm{KINN}(\Theta)
+ [\hat{X}, \hat\Lambda] = \mathrm{KINN}(\Theta)
 \end{equation}
 
 with: \begin{align}
 \Theta \in \mathbb{R}^{B \times 7}, \quad&\Theta_{i} = (a_P^{(i)}, a_Q^{(i)},\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}, P^{\textrm{(max)}^{(i)}}_{g,t})\\
-X \in \mathbb{R}^{B \times 2}, \quad&X_{i} = (P^{(i)}, Q^{(i)})\\
-\Lambda \in \mathbb{R}_+^{0^{B \times 7}}, \quad&\Lambda_{i} = \lambda^{(i)}
+\hat{X} \in \mathbb{R}^{B \times 2}, \quad&\hat{X}_{i} = \hat{x}^{(i)} = (\hat{P}^{(i)}, \hat{Q}^{(i)})\\
+\hat\Lambda \in \mathbb{R}_+^{0^{B \times 7}}, \quad&\hat\Lambda_{i} = \hat\lambda^{(i)}
 \end{align}
 
 The network is composed by three hidden layers of \(512\) neurons each,
-with a LeakyReLU (negative slope of \(0.01\)) as activation function.
+with a LeakyReLU (negative slope of \(0.01\)) as activation function and
+a skip connection around each hidden layer.
 
 At each training step, a random batch of parameters \(\Theta\) was
 sampled:
@@ -493,9 +496,10 @@ To evaluate the approach presented here, the ``cvxpylayers'' library
 implements a batched solver via multi-threading, was used as a baseline.
 The validation set consists of 1000 samples, generated by taking the
 physical parameters of the two generators present in the use case
-presented in and, for each of them, simulating 500 random inputs
-\((a_P, a_Q)\) and external condition \(P^{\textrm{(max)}}_{g,t}\).
-Specifically these parameters are:
+presented in \autocite{henryGymANMReinforcementLearning2021} and, for
+each of them, simulating 500 random inputs \((a_P, a_Q)\) and external
+condition \(P^{\textrm{(max)}}_{g,t}\). Specifically these parameters
+are:
 
 \begin{align}
     [\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}]_1 &= [0.3, 0.2, 0.3, 0.15]\\
@@ -503,12 +507,12 @@ Specifically these parameters are:
 \end{align}
 
 The metrics for validation were the mean absolute error (MAE) and
-\(R^2\). Last values shown in Table~\ref{tbl-eval}, , while the
+\(R^2\). Last values are shown in Table~\ref{tbl-eval}, , while the
 evolution along the various steps is in Figure~\ref{fig-val}.
 
 By increasing the number of points, an inference time comparison was
-also performed on an Apple M2 Pro processor with backend for PyTorch's
-MPS. The difference is remarkable, about two orders of magnitude
+performed on an Apple M2 Pro processor with backend for PyTorch's MPS.
+The difference is remarkable, about two orders of magnitude
 (Figure~\ref{fig-times}): with a batch size of \(1000\), cvxpylayers
 took \(2.35~\textrm{s}\) as opposed to KINN's \(0.06~\textrm{s}\).
 

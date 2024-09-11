@@ -33,8 +33,6 @@ format:
         include-in-header:
             - text: |
                 \usepackage{amsmath}
-                \usepackage{tikz}
-                \usepackage{xcolor}
 abstract: |
     A neural network-based approach for solving parametric convex optimization problems is presented, where the network estimates the optimal points given a batch of input parameters. The network is trained by penalizing violations of the Karush-Kuhn-Tucker (KKT) conditions, ensuring that its predictions adhere to these optimality criteria. Additionally, since the bounds of the parameter space are known, training batches can be randomly generated without requiring external data. This method trades guaranteed optimality for significant improvements in speed, enabling parallel solving of a class of optimization problems.
 bibliography: Preprint.bib
@@ -42,6 +40,7 @@ execute:
   debug: true
 
 ---
+
 
 # Introduction
 Solving convex optimization problems is essential across numerous fields, including optimal control, logistics, and finance. In many scenarios, such as the development of surrogate models, there is a need to solve a large set of related optimization problems defined by varying parameters. Achieving fast solutions, even at the cost of strict optimality guarantees, is often a priority.
@@ -64,6 +63,9 @@ where $x \in \mathcal{D} \subseteq\mathbb{R}^n$ is the optimization variable; $\
 
 Assume differentiable cost and constraints functions and that $g_i$ satisfies Slater's condition. Given a set of parameters $\theta$, $x^* \in \mathcal{D}$ is optimal if and only if there are $\lambda^*$ and $\nu^*$ that, with $x^*$, satisy the Karush-Kuhn-Tucker conditions (KKT) [@boydConvexOptimization2004]:
 
+
+
+
 ```{=tex}
 \begin{align}
     A(\theta) x^* - b(\theta) = 0&\\
@@ -73,11 +75,17 @@ Assume differentiable cost and constraints functions and that $g_i$ satisfies Sl
     \nabla_{x^*} f(x^*, \theta) + \sum\nolimits_{i=1}^m \lambda^*_i\nabla_{x^*} g_i(x^*, \theta) + A(\theta)^T\nu^* = 0 &
 \end{align}
 ```
+
+
+
 # Proposed method
 
 KKT-Informed Neural Network (KINN) builds upon the principles of Physics-Informed Neural Networks (PINNs) [@raissiPhysicsinformedNeuralNetworks2019a], inducing compliance with Karush-Kuhn-Tucker (KKT) through a learning bias, directly coding their violation into the loss function that will be minimized in the training phase.
 
 The network is designed as a multi-layer perceptron (MLP) and processes a batch of $B$ problem parameters $\Theta \in \mathbb{R}^{B \times k}$, $\Theta_i = \theta^{(i)}$. The network outputs $\hat{X}$, $\hat\Lambda$, $\hat{N}$. A ReLU function is applied to the branch predicting $\hat\Lambda$ to ensure its feasibility.
+
+
+
 
 ```{=tex}
 \begin{align}
@@ -87,6 +95,9 @@ The network is designed as a multi-layer perceptron (MLP) and processes a batch 
 \hat{N} \in \mathbb{R}^{B\times p}&, \quad \hat{N}_i = \hat\nu^{(i)}
 \end{align}
 ```
+
+
+
 
 Vector-valued loss function consists of four terms that correspond to each KKT conditions:
 
@@ -98,6 +109,9 @@ Vector-valued loss function consists of four terms that correspond to each KKT c
 
 where:
 
+
+
+
 ```{=tex}
 \begin{align}
     \mathcal{L}_{S}^{(i)} =& \|\nabla_{\hat{x}^{(i)}} f(\hat{x}^{(i)}, \theta^{(i)}) + \sum\nolimits_{j=1}^m \hat{\lambda}^{(i)}_j\nabla_{\hat{x}^{(i)}} g_j(\hat{x}^{(i)}, \theta^{(i)}) + A(\theta^{(i)})^T\hat{\nu}^{(i)}\|_2\\ 
@@ -106,6 +120,9 @@ where:
     \mathcal{L}_{C}^{(i)}  =& \|(\hat{\lambda}_1^{(i)} g_1(\hat{x}^{(i)}, \theta^{(i)}),\dots,\hat{\lambda}_m^{(i)} g_m(\hat{x}^{(i)}, \theta^{(i)}))\|_2\\
 \end{align}
 ```
+
+
+
 
 This vector-valued loss function is minimized through a Jacobian descent [@quintonJacobianDescentMultiObjective2024a]. Let $\mathcal{J} \in \mathbb{R}^{P\times4}$ the Jacobian matrix of $\mathcal{L}$, with $P$ the number of parameters of the KINN, $\mathcal{A}: \mathbb{R}^{P\times4} \to \mathbb{R}^{P}$ is called aggregator. The "direction" of the update of networks parameters will be $\mathcal{A}(\mathcal{J})$. The aggregator chosen is $\mathcal{A}_{\mathrm{UPGrad}}$, described in [@quintonJacobianDescentMultiObjective2024a]. 
 
@@ -119,6 +136,9 @@ The feasible set $\mathcal{D}$ (shown in Figure $\ref{fig:set}$) is defined by t
 \end{equation}
 
 where:
+
+
+
 ```{=tex}
 \begin{align}
     \tau^{(1)}_g &= \frac{Q_g^+ - \overline{Q}_g}{\overline{P_g} - P_g^+}\\
@@ -178,6 +198,9 @@ where:
 \caption{Feasibile set $\mathcal{D}$} \label{fig:set}
 \end{figure}
 ```
+
+
+
 
 
 The problem could be stated in standard form as:
@@ -248,6 +271,9 @@ Models parameters were update to minimize the following vector-valued loss funct
 
 where:
 
+
+
+
 ```{=tex}
 \begin{align}
     \mathcal{L}_S^{(i)} =& \|(a^{(i)}-\hat{x}^{(i)}) + G^{(i)^{T}}\hat\lambda^{(i)}\|_2\\ 
@@ -255,6 +281,9 @@ where:
     \mathcal{L}_{C}^{(i)}  =& \|G^{(i)^{T}}\hat\lambda^{(i)}\|_2\\
 \end{align}
 ```
+
+
+
 
 ### Training
 
@@ -269,33 +298,12 @@ Finally, the training lasted $3583$ steps reaching final values shown in @tbl-tr
 | $\mathcal{L}_C$ | 0.0000 |
 : Final values {#tbl-training}
 
-```{python}
-#| label: fig-training
-#| echo: false
-#| fig-cap: "Loss terms during training"
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+::: {.cell execution_count=1}
 
-
-
-sns.set_context("paper")
-sns.set(style='ticks', palette='tab10')
-stat = pd.read_csv("plots/stat.csv")
-compl = pd.read_csv("plots/compl.csv")
-ineq = pd.read_csv("plots/ineq.csv")
-#plt.yscale("log")
-#.ewm(alpha=2 / 3).mean())
-plt.plot(stat['Step'], stat['Value'], label = "$L_S$")
-plt.plot(compl['Step'], compl['Value'], label = "$L_C$")
-plt.plot(ineq['Step'], ineq['Value'], label = "$L_I$")
-plt.legend(["$\\mathcal{L}_S$", "$\\mathcal{L}_C$", "$\\mathcal{L}_I$"], loc="upper center")
-plt.tight_layout()
-plt.xlabel("Step")
-plt.ylabel("MAE")
-plt.show()
-
-```
+::: {.cell-output .cell-output-display}
+![Loss terms during training](Preprint_files/figure-pdf/fig-training-output-1.pdf){#fig-training}
+:::
+:::
 
 
 ### Evaluation
@@ -317,61 +325,28 @@ By increasing the number of points, an inference time comparison was performed o
 | $R^{2}$  | 0.9972 |
 : Evaluation metrics {#tbl-eval}
 
-```{python}
-#| label: fig-val
-#| echo: false
-#| fig-cap: "Evaluation metrics"
-#| fig-subcap: 
-#|      - MAE
-#|      - $R^{2}$
-#| layout-ncol: 2
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set_context("paper")
-sns.set(style='ticks', palette='tab10')
+::: {#fig-val .cell layout-ncol='2' execution_count=2}
+
+::: {.cell-output .cell-output-display}
+![MAE](Preprint_files/figure-pdf/fig-val-output-1.pdf){#fig-val-1}
+:::
+
+::: {.cell-output .cell-output-display}
+![$R^{2}$](Preprint_files/figure-pdf/fig-val-output-2.pdf){#fig-val-2}
+:::
+
+Evaluation metrics
+:::
 
 
-loss = pd.read_csv("plots/loss.csv")
-plt.yscale("log")
-plt.plot(loss['Step'], loss['Value'])
-plt.tight_layout()
-plt.xlabel("Step")
-plt.ylabel("MAE")
-plt.show()
+::: {.cell execution_count=3}
 
-sns.set_context("paper", font_scale = 1)
-sns.set(style='ticks', palette='tab10')
-sns.despine()
+::: {.cell-output .cell-output-display}
+![Computation time comparison](Preprint_files/figure-pdf/fig-times-output-1.pdf){#fig-times}
+:::
+:::
 
-r2 = pd.read_csv("plots/r2.csv")[55:]
-plt.plot(r2['Step'], r2['Value'])
-plt.tight_layout()
-plt.xlabel("Step")
-plt.ylabel("$R^2$")
-plt.show()
-```
-```{python}
-#| label: fig-times
-#| echo: false
-#| fig-cap: "Computation time comparison"
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set_context("paper")
-sns.set(style='ticks', palette='tab10')
-sns.despine()
 
-times = pd.read_csv("plots/times.csv")
-plt.yscale("log")
-plt.plot(times['size'], times['KINN'])
-plt.plot(times['size'], times['CVXPY'])
-plt.tight_layout()
-plt.legend(["KINN", "CVXPY"], loc="lower right")
-plt.xlabel("Batch size")
-plt.ylabel("Time (s)")
-plt.show()
-```
 # Conclusions
 
 KKT-Informed Neural Network (KINN) was introduced as a neural network-based approach for solving parametric convex optimization problems. The method leverages the Karush-Kuhn-Tucker (KKT) conditions as a learning bias, integrating them into the loss function to ensure that the network’s predictions adhere to the necessary optimality criteria. This allows the network to efficiently estimate solutions while sacrificing some degree of guaranteed optimality in favor of significant improvements in computational speed and scalability.
@@ -379,3 +354,4 @@ KKT-Informed Neural Network (KINN) was introduced as a neural network-based appr
 The experimental results from the provided test case demonstrated that KINN is highly effective in providing near-optimal solutions while enabling parallel problem-solving. The comparison with traditional tools, highlighted KINN's ability to solve optimization problems in a fraction of the time, with minimal loss of accuracy. Metrics such as mean absolute error (MAE) and $R^2$ confirm that KINN produces reliable solutions within acceptable tolerances for real-world applications. Although some optimality is traded for speed, KINN provides a highly practical tool for scenarios where rapid decision-making is critical.
 
 In future work, the potential for expanding this approach to handle non-convex optimization problems will be explored. Additionally, hybrid architectures that combine KINN with traditional optimization methods may offer further improvements in performance, providing a balance between speed and guaranteed optimality across a broader range of problem domains.
+

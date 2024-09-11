@@ -28,12 +28,10 @@ class Net(nn.Module):
     def __init__(self):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(2, 256),
+            nn.Linear(2, 1024),
             nn.LeakyReLU(),
-            ResidualBlock(256),
-            ResidualBlock(256),
-            ResidualBlock(256),
-            nn.Linear(256, 25),
+            ResidualBlock(1024),
+            nn.Linear(1024, 25),
         )
 
     def forward(self, X):
@@ -52,11 +50,11 @@ class KKT_NN:
         self.device = torch.device("cpu")
         self.net = Net().to(self.device)
         self.horizon = 5
-        self.batch_size = 1
+        self.batch_size = 4096
         self.n_iter = 0
         self.agg = UPGrad()
-        self.optimizer = optim.Adam(self.net.parameters(), lr=3e-4, betas=(0.999, 0.999))
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=1.0)
+        self.optimizer = optim.SGD(self.net.parameters(), lr=1e-3)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.9995)
 
         current_time = datetime.now().strftime("%b%d_%H-%M-%S")
         self.tb_logger = SummaryWriter("MPC/runs/tb_logs/" + current_time)
@@ -125,8 +123,8 @@ class KKT_NN:
         a = 0.4*torch.rand((self.batch_size), device=self.device) + 0.6
         q = torch.ones(self.batch_size, device=self.device)
         b = 0.2*torch.rand((self.batch_size), device=self.device) + 0.1
-        x_t = torch.rand((self.batch_size), device=self.device) 
-        x_ref = torch.rand((self.batch_size), device=self.device)
+        x_t = 0.4*torch.rand((self.batch_size), device=self.device) + 0.1
+        x_ref = 0.4*torch.rand((self.batch_size), device=self.device) + 0.6
         
         r = torch.ones((self.batch_size), device=self.device) * 0.1
         a = torch.ones((self.batch_size), device=self.device) * 0.9
@@ -136,16 +134,11 @@ class KKT_NN:
         
         self.optimizer.zero_grad()
         torchjd.backward([loss_stationarity, loss_control, loss_state, loss_comp], self.net.parameters(), self.agg)
-        #(loss_stationarity + loss_comp+loss_state).backward()
-        torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.0e-5)
+        torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.0)
         self.optimizer.step()
         self.scheduler.step()
 
-        self.tb_logger.add_scalar("Loss/Sum", loss_stationarity+loss_control+loss_state+loss_comp, self.n_iter)
-        self.tb_logger.add_scalar("Loss/Control", loss_control, self.n_iter)
-        self.tb_logger.add_scalar("Loss/State", loss_state, self.n_iter)
-        self.tb_logger.add_scalar("Loss/Stat", loss_stationarity, self.n_iter)
-        self.tb_logger.add_scalar("Loss/Comp", loss_comp, self.n_iter)
+        self.tb_logger.add_scalar("train_loss", loss_stationarity+loss_control+loss_state+loss_comp, self.n_iter)
         self.tb_logger.flush()
         self.n_iter += 1
 
