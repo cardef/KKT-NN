@@ -24,8 +24,6 @@ keywords:
 date: 11 September 2024
 date-format: long
 format:
-    latex:
-        documentclass: scrartcl
     arxiv-pdf:
         pdf-engine: pdflatex
         cite-method: biblatex
