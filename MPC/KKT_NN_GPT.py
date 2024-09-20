@@ -27,23 +27,23 @@ class ResidualBlock(nn.Module):
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
+        self.horizon = 2
         self.mlp = nn.Sequential(
-            nn.Linear(2, 256),
+            nn.Linear(2, 64),
             nn.LeakyReLU(),
-            ResidualBlock(256),
-            ResidualBlock(256),
-            ResidualBlock(256),
-            nn.Linear(256, 25),
+            ResidualBlock(64),
+            ResidualBlock(64),
+            nn.Linear(64, self.horizon*5),
         )
 
     def forward(self, X):
         y = self.mlp(X)
         return (
-            y[..., :5],
-            torch.relu(y[..., 5:10]),
-            torch.relu(y[..., 10:15]),
-            torch.relu(y[..., 15:20]),
-            torch.relu(y[..., 20:25]),
+            torch.sigmoid(y[..., :self.horizon]),
+            torch.relu(y[..., self.horizon:self.horizon*2]),
+            torch.relu(y[..., self.horizon*2:self.horizon*3]),
+            torch.relu(y[..., self.horizon*3:self.horizon*4]),
+            torch.relu(y[..., self.horizon*4:self.horizon*5]),
         )
 
 
@@ -51,11 +51,11 @@ class KKT_NN:
     def __init__(self):
         self.device = torch.device("cpu")
         self.net = Net().to(self.device)
-        self.horizon = 5
+        self.horizon = 2
         self.batch_size = 1
         self.n_iter = 0
         self.agg = UPGrad()
-        self.optimizer = optim.Adam(self.net.parameters(), lr=3e-4, betas=(0.999, 0.999))
+        self.optimizer = optim.Adam(self.net.parameters(), lr=3e-4, betas=(0.9, 0.999))
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=1.0)
 
         current_time = datetime.now().strftime("%b%d_%H-%M-%S")
@@ -66,9 +66,11 @@ class KKT_NN:
         cost_value = 0
         for t in range(self.horizon):
             U_t = U[:, t].squeeze()
-            x = a * x + b * U_t
-            cost_value += q * (x - x_ref[:, t].squeeze()).pow(2) + r * U_t.pow(2)
+            x_next = a * x + b * U_t
+            cost_value += q * (x_next - x_ref[:, t].squeeze()).pow(2) + r * U_t.pow(2)
+            x = x_next.detach()
         return cost_value.sum()
+        #return (((a*x_t + b*U) - x_ref)**2).sum() + r*((U**2).sum())
 
     def grad_cost(self, U, x_t, x_ref, a, b, q, r):
         grad = torch.zeros_like(U)
@@ -88,6 +90,7 @@ class KKT_NN:
         
         # Violazione della stazionarietà
         grad_J = self.grad_cost(U, x_t, x_ref, a, b, q, r)
+        grad_J = torch.autograd.grad(self.cost(U, x_t, x_ref, a, b, q, r), U)[0]
         grad_ineq_control = lambda_ - mu
         grad_ineq_state = -b.unsqueeze(1) * nu + b.unsqueeze(1) * rho
         stationarity_violation = (grad_J + grad_ineq_control + grad_ineq_state).pow(2).sum()
@@ -125,8 +128,8 @@ class KKT_NN:
         a = 0.4*torch.rand((self.batch_size), device=self.device) + 0.6
         q = torch.ones(self.batch_size, device=self.device)
         b = 0.2*torch.rand((self.batch_size), device=self.device) + 0.1
-        x_t = torch.rand((self.batch_size), device=self.device) 
-        x_ref = torch.rand((self.batch_size), device=self.device)
+        x_t = torch.rand((self.batch_size), device=self.device)
+        x_ref = torch.rand((self.batch_size), device=self.device) 
         
         r = torch.ones((self.batch_size), device=self.device) * 0.1
         a = torch.ones((self.batch_size), device=self.device) * 0.9
@@ -168,7 +171,7 @@ class KKT_NN:
             b = torch.tensor(0.1)
             r = torch.tensor(0.1)
             val_loss = nn.functional.l1_loss(sol, y)
-            val_r2 = R2Score(5).to(self.device)(sol, y)
+            val_r2 = R2Score(self.horizon).to(self.device)(sol, y)
             val_mape = MeanAbsolutePercentageError().to(self.device)(sol, y)
             self.tb_logger.add_scalar("Val/Loss", val_loss, self.n_iter)
             self.tb_logger.add_scalar("Val/R2", val_r2,  self.n_iter)
