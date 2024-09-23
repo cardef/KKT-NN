@@ -205,7 +205,7 @@ class KKT_NN:
         )  # Dati misurati con rumore
 
         
-        self.net = ConditionalAutoencoder(self.n, num_residual_blocks=2, hidden_channels=128, device=self.device).to(self.device)
+        self.net = ConditionalAutoencoder(self.n, num_residual_blocks=6, hidden_channels=128, device=self.device).to(self.device)
 
         self.batch_size = 64
         self.n_iter = 0
