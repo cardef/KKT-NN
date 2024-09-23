@@ -103,7 +103,7 @@ class ConditionalAutoencoder(nn.Module):
         )
         
         self.decoder_fc = nn.Sequential(
-            nn.Linear(hidden_channels, 128),
+            nn.Linear(hidden_channels+2, 128),
             nn.LeakyReLU(),
             nn.Linear(128, hidden_channels),
             nn.LeakyReLU(),
@@ -112,14 +112,14 @@ class ConditionalAutoencoder(nn.Module):
         
         # Moltiplicatori di Lagrange
         self.fc_lambda = nn.Sequential(
-            nn.Linear(hidden_channels, 64),
+            nn.Linear(hidden_channels+2, 64),
             nn.LeakyReLU(),
             nn.Linear(64, 1),
             nn.Softplus()  # Garantisce valori positivi
         )
         
         self.fc_mu = nn.Sequential(
-            nn.Linear(hidden_channels, 64),
+            nn.Linear(hidden_channels+2, 64),
             nn.LeakyReLU(),
             nn.Linear(64, 1),
             nn.Softplus()  # Garantisce valori positivi
@@ -137,7 +137,7 @@ class ConditionalAutoencoder(nn.Module):
         encoded_params = encoded_params.unsqueeze(-1).repeat(1, 1, self.signal_length)  # [batch_size, hidden_channels, 1]
         
         # Preparazione del segnale rumoroso per la convoluzione
-        noisy_signal = noisy_signal.unsqueeze(0)  # [batch_size, 1, N]
+        noisy_signal = noisy_signal.unsqueeze(1)  # [batch_size, 1, N]
         
         # Concatenazione delle features condizionali con il segnale rumoroso
         
@@ -145,15 +145,16 @@ class ConditionalAutoencoder(nn.Module):
         encoded = self.encoder_conv(noisy_signal)  # [batch_size, hidden_channels, N]
         
         # Decoder convoluzionale
-        decoded = self.decoder_conv(torch.cat([encoded.unsqueeze(0).repeat(batch_size, 1, 1), encoded_params], 1))  # [batch_size, hidden_channels +1, N]
+        #decoded = self.decoder_conv(torch.cat([encoded.unsqueeze(0).repeat(batch_size, 1, 1), encoded_params], 1))  # [batch_size, hidden_channels +1, N]
         
         # Decoder completamente connesso
-        decoded = decoded[:, :-1, :].mean(dim=2)  # Aggregazione lungo la dimensione spaziale
-        reconstructed_signal = self.decoder_fc(decoded)  # [batch_size, N]
+        #decoded = decoded[:, :-1, :].mean(dim=2)  # Aggregazione lungo la dimensione spaziale
+        encoded = encoded.mean(dim=2)
+        reconstructed_signal = noisy_signal + self.decoder_fc(torch.cat([encoded.repeat(batch_size, 1), rho.unsqueeze(1), kappa.unsqueeze(1)], 1))  # [batch_size, N]
         
         # Moltiplicatori di Lagrange
-        lambda_ = self.fc_lambda(decoded)  # [batch_size, 1]
-        mu = self.fc_mu(decoded)            # [batch_size, 1]
+        lambda_ = self.fc_lambda(torch.cat([encoded, rho.unsqueeze(1), kappa.unsqueeze(1)], 1))  # [batch_size, 1]
+        mu = self.fc_mu(torch.cat([encoded, rho.unsqueeze(1), kappa.unsqueeze(1)], 1))            # [batch_size, 1]
         
         return reconstructed_signal, lambda_.squeeze(), mu.squeeze()
 
@@ -195,14 +196,12 @@ class KKT_NN:
     def __init__(self):
         torch.manual_seed(42)
         self.device = torch.device("cpu")
-        self.n = 100
+        self.n = 1000
         t = torch.linspace(0, 1, self.n, dtype=torch.float32)
         self.true = (0.8 * ((torch.sin(50 * t) + torch.sin(10 * t)) / 2) + 0.1 * t).to(
             dtype=torch.float32, device=self.device
         )  # Profilo di elevazione reale
-        self.noisy = self.true + 0.1 * torch.rand(
-            self.n, dtype=torch.float32, device=self.device
-        )  # Dati misurati con rumore
+         # Dati misurati con rumore
 
         
         self.net = ConditionalAutoencoder(self.n, num_residual_blocks=6, hidden_channels=128, device=self.device).to(self.device)
@@ -212,7 +211,7 @@ class KKT_NN:
         self.tolerance = 1e-6
         self.soboleng = torch.quasirandom.SobolEngine(dimension=2)
         self.agg = UPGrad()
-        self.optimizer = optim.Adam(self.net.parameters(), lr=1e-5)
+        self.optimizer = optim.Adam(self.net.parameters(), lr=1e-3)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode="min", factor=0.5, patience=1000, verbose=True
         )
@@ -246,20 +245,20 @@ class KKT_NN:
         self.lambda_reg_weight = 1e-5
         self.mu_reg_weight = 1e-5
 
-    def objective_fun(self, x):
-        return torch.square(x - self.noisy).sum(1)
+    def objective_fun(self, x, signal):
+        return torch.square(x - signal).sum(1)
 
-    def concavity_constraint(self, x, kappa):
+    def concavity_constraint(self, x, kappa, signal):
         return torch.square(torch.matmul(self.D2, x.T)).T.sum(1) - (
-            kappa * torch.square(torch.matmul(self.D2, self.noisy)).sum()
+            kappa * torch.square(torch.matmul(self.D2, signal)).sum()
         )
 
-    def variation_constraint(self, x, rho):
+    def variation_constraint(self, x, rho, signal):
         return torch.square(torch.matmul(self.D, x.T)).T.sum(1) - (
-            rho * torch.square(torch.matmul(self.D, self.noisy)).sum()
+            rho * torch.square(torch.matmul(self.D, signal)).sum()
         )
 
-    def kkt_loss(self, x, rho, kappa, lambda_, mu):
+    def kkt_loss(self, x, rho, kappa, lambda_, mu, signal):
         """
         Compute the KKT loss components:
         1. Stationarity
@@ -270,11 +269,11 @@ class KKT_NN:
         6. L1 Regularization for Sparsity (optional)
         """
         # Objective function
-        cost = self.objective_fun(x)  # Shape: (batch_size,)
+        cost = self.objective_fun(x, signal)  # Shape: (batch_size,)
 
         # Constraints
-        concavity = self.concavity_constraint(x, kappa)  # Shape: (batch_size,)
-        variation = self.variation_constraint(x, rho)  # Shape: (batch_size,)
+        concavity = self.concavity_constraint(x, kappa, signal)  # Shape: (batch_size,)
+        variation = self.variation_constraint(x, rho, signal)  # Shape: (batch_size,)
 
         # Compute gradients
         cost_mean = cost.mean()
@@ -345,12 +344,15 @@ class KKT_NN:
 
     def training_step(self):
         # Campionamento di rho e kappa che aumentano la probabilità di vincoli attivi
+        signal = self.true + 0.1 * torch.rand(
+            (self.batch_size, self.n), dtype=torch.float32, device=self.device
+        ) 
         rho_kappa = self.soboleng.draw(self.batch_size, dtype=torch.float32).to(self.device)
         rho = rho_kappa[..., 0]  # Valori tra 0.75 e 1.25
         kappa = rho_kappa[..., 1]  # Valori tra 0.75 e 1.25
 
         # Forward pass
-        x, lambda_, mu = self.net(self.noisy, rho, kappa)
+        x, lambda_, mu = self.net(signal, rho, kappa)
 
         # Calcolo della loss KKT
         (
@@ -359,7 +361,7 @@ class KKT_NN:
             variation_feasibility,
             concavity_complementary,
             variation_complementary,
-        ) = self.kkt_loss(x, rho, kappa, lambda_, mu)
+        ) = self.kkt_loss(x, rho, kappa, lambda_, mu, signal)
 
         # Calcolo della loss totale con pesi
         total_loss = (
@@ -397,7 +399,7 @@ class KKT_NN:
         )
         self.tb_logger.add_scalar("Loss/Stat", stationarity.item(), self.n_iter)
         self.tb_logger.add_scalar(
-            "Loss/Cost", self.objective_fun(x).mean().item(), self.n_iter
+            "Loss/Cost", self.objective_fun(x, signal).mean().item(), self.n_iter
         )
         self.tb_logger.add_scalar(
             "Loss/Conc", concavity_feasibility.item(), self.n_iter
@@ -483,10 +485,11 @@ class Samples(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        rho, kappa, y, mu, lambda_ = self.samples[idx]
+        signal, rho, kappa, y, mu, lambda_ = self.samples[idx]
         if self.transform:
             y = self.transform(y)
         return (
+            signal.astype(np.float32),
             rho.astype(np.float32),
             kappa.astype(np.float32),
             y.astype(np.float32),
@@ -504,6 +507,6 @@ if __name__ == "__main__":
     for epoch in range(10000):
         pbar.set_description(f"Epoch {epoch+1}")
         model.training_step()
-        for rho, kappa, y, mu, lambda_ in loader:
-            model.validation_step(model.noisy, rho, kappa, y, mu, lambda_)
+        for signal, rho, kappa, y, mu, lambda_ in loader:
+            model.validation_step(signal, rho, kappa, y, mu, lambda_)
         pbar.update(1)
