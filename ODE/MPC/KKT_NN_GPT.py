@@ -59,7 +59,7 @@ class KKT_NN:
         self.batch_size = 64
         self.n_iter = 0
         self.agg = UPGrad()
-        self.optimizer = optim.Adam(self.net.parameters(), lr=1e-5, betas=(0.9, 0.999))
+        self.optimizer = optim.Adam(self.net.parameters(), lr=3e-4, betas=(0.9, 0.999))
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=1.0)
 
         current_time = datetime.now().strftime("%b%d_%H-%M-%S")
@@ -130,15 +130,15 @@ class KKT_NN:
         dx = (
             -(grad_L
             + torch.bmm(
-                torch.transpose(jacob_control, 1, 2), control_feasibility.unsqueeze(2)
+                torch.transpose(jacob_control, 1, 2), torch.relu(lambda_ + control_feasibility).unsqueeze(2)
             ).squeeze()
             + torch.bmm(
-                torch.transpose(jacob_state, 1, 2), state_feasibility.unsqueeze(2)
+                torch.transpose(jacob_state, 1, 2), torch.relu(mu + state_feasibility).unsqueeze(2)
             ).squeeze())
         )
 
-        dlambda = 0.5 * control_feasibility
-        dmu = 0.5 * state_feasibility
+        dlambda = 0.5 * (- lambda_ + torch.relu(lambda_ + control_feasibility))
+        dmu = 0.5 * (- mu + torch.relu(mu + state_feasibility))
 
         loss = 0
 
