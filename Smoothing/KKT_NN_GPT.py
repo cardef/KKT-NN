@@ -65,10 +65,10 @@ class ConvResidualBlock(nn.Module):
     def forward(self, x):
         identity = x
         out = self.conv1(x)
-        #out = self.bn1(out)
+        out = self.bn1(out)
         out = self.relu(out)
         out = self.conv2(out)
-        #out = self.bn2(out)
+        out = self.bn2(out)
 
         if self.skip_conv:
             identity = self.skip_conv(identity)
@@ -103,9 +103,13 @@ class ConditionalAutoencoder(nn.Module):
         )
         
         self.decoder_fc = nn.Sequential(
-            nn.Linear(hidden_channels+2, 128),
+            nn.Linear(hidden_channels+2, hidden_channels),
             nn.LeakyReLU(),
-            nn.Linear(128, hidden_channels),
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_channels, hidden_channels),
             nn.LeakyReLU(),
             nn.Linear(hidden_channels, signal_length)
         )
@@ -194,7 +198,7 @@ class Net(nn.Module):
 class KKT_NN:
     def __init__(self):
         torch.manual_seed(42)
-        self.device = torch.device("cpu")
+        self.device = torch.device("mps")
         self.n = 1000
         t = torch.linspace(0, 1, self.n, dtype=torch.float32)
         self.true = (0.8 * ((torch.sin(50 * t) + torch.sin(10 * t)) / 2) + 0.1 * t).to(
@@ -203,7 +207,7 @@ class KKT_NN:
          # Dati misurati con rumore
 
         
-        self.net = ConditionalAutoencoder(self.n, num_residual_blocks=6, hidden_channels=128, device=self.device).to(self.device)
+        self.net = ConditionalAutoencoder(self.n, num_residual_blocks=4, hidden_channels=128, device=self.device).to(self.device)
 
         self.batch_size = 64
         self.n_iter = 0
@@ -254,7 +258,7 @@ class KKT_NN:
 
     def variation_constraint(self, x, rho, signal):
         return torch.square(torch.matmul(self.D, x.T)).T.sum(1) - (
-            rho * torch.square(torch.matmul(self.D, signal.T)).T.sum(1)
+            0*rho * torch.square(torch.matmul(self.D, signal.T)).T.sum(1)
         )
 
     def kkt_loss(self, x, rho, kappa, lambda_, mu, signal):
@@ -340,17 +344,41 @@ class KKT_NN:
             complementarity_concavity,
             complementarity_variation,
         )
-
+    def generate_random_signals(self, batch_size, n, device):
+        t = torch.linspace(0, 1, n, device=device).unsqueeze(0).repeat(batch_size, 1)  # [batch_size, n]
+        freq1 = torch.rand(batch_size, device=device) * 40 + 10  # [batch_size]
+        freq2 = torch.rand(batch_size, device=device) * 40 + 10  # [batch_size]
+        amp1 = torch.rand(batch_size, device=device) * 0.5 + 0.5  # [batch_size]
+        amp2 = torch.rand(batch_size, device=device) * 0.5 + 0.5  # [batch_size]
+        phase1 = torch.rand(batch_size, device=device) * 2 * np.pi  # [batch_size]
+        phase2 = torch.rand(batch_size, device=device) * 2 * np.pi  # [batch_size]
+        offset = torch.rand(batch_size, device=device) * 0.2  # [batch_size]
+        signal = (amp1.unsqueeze(1) * torch.sin(freq1.unsqueeze(1) * t * 2 * np.pi + phase1.unsqueeze(1)) +
+                amp2.unsqueeze(1) * torch.sin(freq2.unsqueeze(1) * t * 2 * np.pi + phase2.unsqueeze(1)) +
+                offset.unsqueeze(1) * t)
+        return signal
     def training_step(self):
         # Campionamento di rho e kappa che aumentano la probabilità di vincoli attivi
         self.net.train()
-        signal = self.true + 0.1 * torch.rand(
+        t = torch.linspace(0,1, self.n).unsqueeze(0).repeat(self.batch_size, 1)
+        
+        signal = self.true + 0.01 * torch.randn(
             (self.batch_size, self.n), dtype=torch.float32, device=self.device
         ) 
+
+        signal = self.generate_random_signals(self.batch_size,self.n, self.device)
         rho_kappa = self.soboleng.draw(self.batch_size, dtype=torch.float32).to(self.device)
         rho = rho_kappa[..., 0]  # Valori tra 0.75 e 1.25
         kappa = rho_kappa[..., 1]  # Valori tra 0.75 e 1.25
 
+
+        rho = torch.randn(
+            (self.batch_size), dtype=torch.float32, device=self.device
+        ) 
+
+        kappa = torch.randn(
+            (self.batch_size), dtype=torch.float32, device=self.device
+        ) 
         # Forward pass
         x, lambda_, mu = self.net(signal, rho, kappa)
 
