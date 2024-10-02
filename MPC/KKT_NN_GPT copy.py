@@ -30,7 +30,7 @@ class SolNet(nn.Module):
         super().__init__()
         self.horizon = 5
         self.mlp = nn.Sequential(
-            nn.Linear(3, 64),
+            nn.Linear(2, 64),
             nn.LeakyReLU(),
             ResidualBlock(64),
             ResidualBlock(64),
@@ -38,20 +38,12 @@ class SolNet(nn.Module):
             nn.Sigmoid(),
         )
 
-    def forward(self, r, x_ref, t):
+    def forward(self, r, x_ref):
 
-        X = torch.stack([r, x_ref, t], -1)
+        X = torch.stack([r, x_ref], -1)
         y = self.mlp(X)
 
-        if y.dim() == 2:
-            y_hat = (
-                torch.zeros_like(y)
-                + (1 - torch.exp(-X[..., [-1]])).repeat(1, y.shape[1]) * y
-            )
-        else:
-            y_hat = torch.zeros_like(y) + (1 - torch.exp(-X[..., [-1]])).repeat(y.shape[0]) * y
-
-        return y_hat
+        return y
 
 
 class LambdaNet(nn.Module):
@@ -59,7 +51,7 @@ class LambdaNet(nn.Module):
         super().__init__()
         self.horizon = 5
         self.mlp = nn.Sequential(
-            nn.Linear(3, 64),
+            nn.Linear(2, 64),
             nn.LeakyReLU(),
             ResidualBlock(64),
             ResidualBlock(64),
@@ -67,19 +59,11 @@ class LambdaNet(nn.Module):
             nn.ReLU(),
         )
 
-    def forward(self, r, x_ref, t):
-        X = torch.stack([r, x_ref, t], -1)
+    def forward(self, r, x_ref):
+        X = torch.stack([r, x_ref], -1)
         y = self.mlp(X)
 
-        if y.dim() == 2:
-            y_hat = (
-                torch.zeros_like(y)
-                + (1 - torch.exp(-X[..., [-1]])).repeat(1, y.shape[1]) * y
-            )
-        else:
-            y_hat = torch.zeros_like(y) + (1 - torch.exp(-X[..., -1])).repeat(y.shape[0]) * y
-
-        return y_hat
+        return y
 
 
 class KKT_NN:
@@ -87,20 +71,20 @@ class KKT_NN:
         self.device = torch.device("cpu")
         self.solnet = SolNet().to(self.device)
         self.lambdanet = LambdaNet().to(self.device)
-        self.sobol_eng = torch.quasirandom.SobolEngine(3, scramble=True, seed=42)
+        self.sobol_eng = torch.quasirandom.SobolEngine(2, scramble=True, seed=42)
         self.horizon = 5
         self.batch_size = 64
         self.n_iter = 0
         self.agg = UPGrad()
-        self.optimizer = optim.Adam(self.solnet.parameters(), lr=1e-4)
-        self.lambda_optimizer = optim.Adam(self.lambdanet.parameters(), lr=1e-4)
+        self.optimizer = optim.Adam(self.solnet.parameters(), lr=1e-5)
+        self.lambda_optimizer = optim.Adam(self.lambdanet.parameters(), lr=1e-5)
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.99999)
         self.lambda_scheduler = optim.lr_scheduler.ExponentialLR(
             self.lambda_optimizer, gamma=0.99999
         )
 
         current_time = datetime.now().strftime("%b%d_%H-%M-%S")
-        self.tb_logger = SummaryWriter("ODE/MPC/runs/tb_logs/" + current_time)
+        self.tb_logger = SummaryWriter("MPC/runs/tb_logs/" + current_time)
 
     def cost(self, a, b, r, x_0, x_ref, U):
         x = x_0
@@ -129,58 +113,32 @@ class KKT_NN:
 
             x = x_next
         return torch.cat([U - U_max, U_min - U, torch.stack(state_constraints, -1)], -1)
+    def lagrangian(self, a, b, r, x_0, x_ref, U, lambda_):
 
-    def kkt_loss(self, a, b, r, x_0, x_ref, t):
+        if lambda_.ndim == 2:
+            return self.cost(a, b, r, x_0, x_ref, U) + torch.bmm(lambda_.unsqueeze(1), self.constraints(a, b, x_0, U).unsqueeze(2)).squeeze()
+        else:
+            return self.cost(a, b, r, x_0, x_ref, U)+lambda_@self.constraints(a, b, x_0, U)
+    def kkt_loss(self, a, b, r, x_0, x_ref):
 
         # Violazione della stazionarietà
         r_unnorm = 0.1*r + 0.1
         x_ref_unnorm = 0.1 * x_ref + 0.7
-        t_unnorm = 100 * t
-        U = self.solnet(r, x_ref, t)
+        
+        U = self.solnet(r, x_ref)
 
-        lambda_ = self.lambdanet(r, x_ref, t)
+        lambda_ = self.lambdanet(r, x_ref)
         feasibility = self.constraints(a, b, x_0, U)
-
+        complementarity = lambda_ * feasibility
         # grad_L = torch.autograd.grad(self.cost(a, b, r, x_0, x_ref, U), U, grad_outputs=torch.ones_like(U), is_grads_batched=True)[0]
-        grad_L = vmap(grad(self.cost, argnums=5), in_dims=(0, 0, 0, 0, 0, 0))(
-            a, b, r_unnorm, x_0, x_ref_unnorm, U
+        grad_L = vmap(grad(self.lagrangian, argnums=5), in_dims=(0, 0, 0, 0, 0, 0, 0))(
+            a, b, r_unnorm, x_0, x_ref_unnorm, U, lambda_
         )
 
-        jacob_constraints = vmap(
-            jacrev(self.constraints, argnums=3), in_dims=(0, 0, 0, 0)
-        )(a, b, x_0, U)
-
-        dx = -(
-            grad_L
-            + torch.bmm(
-                torch.transpose(jacob_constraints, 1, 2),
-                torch.relu(lambda_ + feasibility).unsqueeze(2),
-            ).squeeze()
-        )
-
-        dlambda = 0.5 * (-lambda_ + torch.relu(lambda_ + feasibility))
-
-        loss = (
-            torch.square(
-                dx
-                - vmap(
-                    jacrev(
-                        self.solnet,
-                        argnums=-1,
-                    ),
-                )(r, x_ref, t).squeeze()
-            ).sum()
-            + torch.square(
-                dlambda
-                - vmap(
-                    jacrev(
-                        self.lambdanet,
-                        argnums=-1,
-                    ),
-                )(r, x_ref, t).squeeze()
-            ).sum()
-        )
-        return loss
+        loss_stationarity = torch.square(grad_L).sum(1).mean(0)
+        loss_feasibility = torch.square(torch.relu(feasibility)).sum(1).mean(0)
+        loss_complementarity = torch.square(complementarity).sum(1).mean(0)
+        return loss_stationarity, loss_feasibility, loss_complementarity
 
     def training_step(self):
         sampled_batch = self.sobol_eng.draw(self.batch_size)
@@ -190,36 +148,32 @@ class KKT_NN:
         x_0 = torch.ones(self.batch_size) * 0.2
         r = sampled_batch[..., 0]
         x_ref = sampled_batch[..., 1]
-        t = 10.0*sampled_batch[..., 2]
-        t.requires_grad_(True)
         # U, lambda_, mu = self.net(torch.stack([a, b, r, x_0, x_ref, t], 1))
 
-        loss = self.kkt_loss(a, b, r, x_0, x_ref, t)
+        loss_stationarity, loss_feasibility, loss_complementarity = self.kkt_loss(a, b, r, x_0, x_ref)
 
         self.optimizer.zero_grad()
         self.lambda_optimizer.zero_grad()
         # torchjd.backward([loss_stationarity, loss_control, loss_state, loss_comp], self.net.parameters(), self.agg)
-        loss.backward()
+        (loss_stationarity+ loss_feasibility+loss_complementarity).backward()
         # torch.nn.utils.clip_grad_norm_(self.solnet.parameters(), 1.0)
         # torch.nn.utils.clip_grad_norm_(self.lambdanet.parameters(), 1.0)
         self.optimizer.step()
         self.lambda_optimizer.step()
         self.scheduler.step()
         self.lambda_scheduler.step()
-        """ self.tb_logger.add_scalar(
+        self.tb_logger.add_scalar(
             "Loss/Sum",
-            loss_stationarity + loss_control + loss_state + loss_comp,
+            loss_stationarity+ loss_feasibility+loss_complementarity,
             self.n_iter,
         )
-        self.tb_logger.add_scalar("Loss/Control", loss_control, self.n_iter)
-        self.tb_logger.add_scalar("Loss/State", loss_state, self.n_iter)
         self.tb_logger.add_scalar("Loss/Stat", loss_stationarity, self.n_iter)
-        self.tb_logger.add_scalar("Loss/Comp", loss_comp, self.n_iter) """
-        self.tb_logger.add_scalar("Train/Loss", loss, self.n_iter)
+        self.tb_logger.add_scalar("Loss/Feas", loss_feasibility, self.n_iter)
+        self.tb_logger.add_scalar("Loss/Comp", loss_complementarity, self.n_iter)
         self.tb_logger.flush()
         self.n_iter += 1
 
-        return loss.item()
+        return (loss_stationarity+ loss_feasibility+loss_complementarity).item()
 
     def validation_step_fake(self):
         self.solnet.eval()
@@ -241,8 +195,7 @@ class KKT_NN:
         with torch.no_grad():
             x_ref = x_ref.to(self.device)
             y = y.to(self.device)
-            t = 10.0*torch.ones(y.shape[0])
-            U = self.solnet(r, x_ref, t)
+            U = self.solnet(r, x_ref)
             val_loss = nn.functional.l1_loss(U, y)
             val_r2 = R2Score(self.horizon).to(self.device)(U, y)
             val_mape = MeanAbsolutePercentageError().to(self.device)(U, y)
@@ -258,7 +211,7 @@ class KKT_NN:
 
 class Samples(Dataset):
     def __init__(self, transform=None):
-        self.samples = load(open("ODE/MPC/mpc.pkl", "rb"))
+        self.samples = load(open("MPC/mpc.pkl", "rb"))
         self.transform = transform
 
     def __len__(self):
