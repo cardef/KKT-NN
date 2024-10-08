@@ -62,7 +62,7 @@ class LambdaNet(nn.Module):
     def forward(self, X):
         y = self.mlp(X)
 
-        return X[...,:2] + y
+        return  y
 
 
 class KKT_NN:
