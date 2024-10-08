@@ -26,6 +26,7 @@ date-format: long
 format:
     arxiv-pdf:
         pdf-engine: pdflatex
+        fig-format: svg
         cite-method: natbib
         natbiboptions: numbers
         keep-tex: true
@@ -268,7 +269,7 @@ Finally, the training lasted $3583$ steps reaching final values shown in @tbl-tr
 | $\mathcal{L}_C$ | 0.0000 |
 : Final values {#tbl-training}
 
-```{python}
+```{python .reticulate = FALSE}
 #| label: fig-training
 #| echo: false
 #| fig-cap: "Loss terms during training"
@@ -296,7 +297,7 @@ plt.show()
 
 ```
 
-```{r}
+```{r .reticulate = FALSE}
 library(ggplot2)
 library(cowplot)
 feas_df <- read.csv("Preprint/plots/ineq.csv")
