@@ -93,17 +93,17 @@ class KKT_NN:
         grad_J = torch.autograd.grad(self.cost(U, x_t, x_ref, a, b, q, r), U)[0]
         grad_ineq_control = lambda_ - mu
         grad_ineq_state = -b.unsqueeze(1) * nu + b.unsqueeze(1) * rho
-        stationarity_violation = (grad_J + grad_ineq_control + grad_ineq_state).pow(2).sum()
+        stationarity_violation = (grad_J + grad_ineq_control + grad_ineq_state).pow(2).sum(1)
 
         # Violazione della primal feasibility (controlli e stati)
-        control_feasibility = (torch.max(U_min - U, torch.zeros_like(U)) + torch.max(U - U_max, torch.zeros_like(U))).pow(2).sum()
+        control_feasibility = (torch.max(U_min - U, torch.zeros_like(U)) + torch.max(U - U_max, torch.zeros_like(U))).pow(2).sum(1)
 
         x = x_t
         state_feasibility = 0
         for t in range(self.horizon):
             U_t = U[:, t].squeeze()
             x = a * x + b * U_t
-            state_feasibility += (torch.max(T_min - x, torch.zeros_like(x)) + torch.max(x - T_max, torch.zeros_like(x))).pow(2).sum()
+            state_feasibility += (torch.max(T_min - x, torch.zeros_like(x)) + torch.max(x - T_max, torch.zeros_like(x))).pow(2).sum(1)
 
         # Violazione della complementarità
         comp_control = lambda_ * (U - U_min) + mu * (U_max - U)
@@ -114,9 +114,9 @@ class KKT_NN:
             x_next = a * x + b * U_t
             nu_t = nu[:, t].squeeze()
             rho_t = rho[:, t].squeeze()
-            comp_state += (nu_t * (T_min - x_next) + rho_t * (x_next - T_max)).pow(2).sum()
+            comp_state += (nu_t * (T_min - x_next) + rho_t * (x_next - T_max)).pow(2).sum(1)
             x = x_next
-        comp_loss = comp_control.pow(2).sum() + comp_state
+        comp_loss = comp_control.pow(2).sum(1) + comp_state
 
         # Violazione della dual feasibility
 
@@ -136,11 +136,34 @@ class KKT_NN:
         b = torch.ones((self.batch_size), device=self.device) * 0.1
         sol, lambda_, mu, nu, rho = self.net(torch.stack([x_t, x_ref], 1))
         loss_stationarity, loss_control, loss_state, loss_comp = self.kkt_loss(sol, lambda_, mu, nu, rho, x_t.detach(), x_ref.repeat(self.horizon, 1, ).T.detach(), a.detach(), b.detach(), q.detach(), r.detach())
-        
-        self.optimizer.zero_grad()
-        torchjd.backward([loss_stationarity, loss_control, loss_state, loss_comp], self.net.parameters(), self.agg)
-        #(loss_stationarity + loss_comp+loss_state).backward()
-        torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.0e-5)
+        def closure():
+            self.optimizer.zero_grad()
+            loss_stationarity, loss_feasibility, loss_complementarity = self.kkt_loss(sol, lambda_, mu, nu, rho, x_t, x_ref.repeat(self.horizon, 1, ).T, a, b, q.detach(), r.detach())
+            loss = (loss_stationarity + loss_feasibility+loss_complementarity).mean()
+            loss.backward()
+            self.tb_logger.add_scalar(
+            "Loss/Sum",
+            loss,
+            self.n_iter,
+            )
+            self.tb_logger.add_scalar("Loss/Stat", loss_stationarity.mean(), self.n_iter)
+            self.tb_logger.add_scalar("Loss/Feas", loss_feasibility.mean(), self.n_iter)
+            self.tb_logger.add_scalar("Loss/Comp", loss_complementarity.mean(), self.n_iter)
+            self.tb_logger.flush()
+            self.n_iter += 1
+
+            if self.es.early_stop(loss):
+                if isinstance(self.optimizer, optim.Adam) :
+                    print("LBFGS")
+                    self.es=EarlyStopper(patience=1000)
+                    self.optimizer = optim.LBFGS(self.kinn.parameters(), lr=1e-2)
+                else:
+                    self.terminated = True
+            #self.scheduler.step(loss)
+            return loss
+        #torchjd.backward([loss_stationarity, loss_control, loss_state, loss_comp], self.net.parameters(), self.agg)
+        (loss_stationarity + loss_comp+loss_state).mean().backward()
+        #torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1.0e-5)
         self.optimizer.step()
         self.scheduler.step()
 
