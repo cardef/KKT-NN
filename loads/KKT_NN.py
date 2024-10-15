@@ -233,7 +233,7 @@ class KKT_NN():
 
 class Samples(Dataset):
     def __init__(self, transform=None):
-        self.samples = load(open("loads/dataset_loads.pkl", "rb"))
+        self.samples = load(open("loads/dataset_loads_comp_norm.pkl", "rb"))
         self.transform = transform
 
     def __len__(self):

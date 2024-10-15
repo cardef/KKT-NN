@@ -495,11 +495,27 @@ Loss & Value \\
 \(\mathcal{L}_C\) & 0.0000 \\
 \end{longtable}
 
+\begin{verbatim}
+# A tibble: 10 x 4
+    Step Stationarity Feasibility Complementarity
+   <dbl>        <dbl>       <dbl>           <dbl>
+ 1     1       18.5     0                   1.97 
+ 2     2        9.68    0                   1.37 
+ 3     3        5.05    0                   1.01 
+ 4     4        2.45    0                   0.774
+ 5     5        1.56    0                   0.627
+ 6     6        1.52    0                   0.521
+ 7     7        1.51    0                   0.420
+ 8     8        1.21    0                   0.341
+ 9     9        0.813   0                   0.278
+10    10        0.551   0.0000260           0.226
+\end{verbatim}
+
 \begin{figure}
 
 \centering{
 
-\includegraphics{Preprint_files/figure-pdf/fig-training-output-1.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-training-1.pdf}
 
 }
 
@@ -556,7 +572,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics{Preprint_files/figure-pdf/fig-val-output-1.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-val-1.pdf}
 
 }
 
@@ -568,11 +584,35 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics{Preprint_files/figure-pdf/fig-val-output-2.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-val-2.pdf}
 
 }
 
-\subcaption{\label{fig-val-2}\(R^{2}\)}
+\subcaption{\label{fig-val-2}RMSE}
+
+\end{minipage}%
+\newline
+\begin{minipage}{0.50\linewidth}
+
+\centering{
+
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-val-3.pdf}
+
+}
+
+\subcaption{\label{fig-val-3}MAPE}
+
+\end{minipage}%
+%
+\begin{minipage}{0.50\linewidth}
+
+\centering{
+
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-val-4.pdf}
+
+}
+
+\subcaption{\label{fig-val-4}\(R^{2}\)}
 
 \end{minipage}%
 
@@ -584,7 +624,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics{Preprint_files/figure-pdf/fig-times-output-1.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-times-1.pdf}
 
 }
 
