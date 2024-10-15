@@ -56,7 +56,7 @@ model.kinn.to(device)
 
 kinn_times = []
 cvxpy_times = []
-for i in trange(1, 1000):
+for i in trange(1, 20):
     start_kinn = time()
     pred = model.kinn(ds[:i, ...])[0]
     end_kinn = time()
@@ -66,6 +66,6 @@ for i in trange(1, 1000):
     end_cvxpy = time()
     kinn_times.append(end_kinn-start_kinn)
     cvxpy_times.append(end_cvxpy-start_cvxpy)
-report = pd.DataFrame({"Batch size": np.array([i for i in range(1, 1000)]), "KINN": np.array(kinn_times), "CVXPY": np.array(cvxpy_times)})
+report = pd.DataFrame({"Batch size": np.array([i for i in range(1, 20)]), "KINN": np.array(kinn_times), "CVXPY": np.array(cvxpy_times)})
 
-report.to_csv("/home/VICOMTECH/cdellefemine/Documents/code/KKT-NN/Projection/times.csv", index = False)
+report.to_csv("Projection/times.csv", index = False)
