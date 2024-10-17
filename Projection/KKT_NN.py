@@ -61,7 +61,7 @@ class KINN(nn.Module):
             ResidualBlock(512),
             ResidualBlock(512),
             nn.Linear(512, 7),
-            nn.Softplus(),
+            nn.Softplus(beta=5),
         )
     def forward(self, X):
         embedding = self.shared(X)

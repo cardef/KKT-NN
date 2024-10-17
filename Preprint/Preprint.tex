@@ -20,7 +20,7 @@
 \usepackage{lmodern}
 \ifPDFTeX\else  
     % xetex/luatex font selection
-    \setmainfont[]{Latin Modern Roman}
+  \setmainfont[]{Latin Modern Roman}
   \setmathfont[]{Latin Modern Math}
 \fi
 % Use upquote if available, for straight quotes in verbatim environments
@@ -43,28 +43,14 @@
 \setlength{\emergencystretch}{3em} % prevent overfull lines
 \setcounter{secnumdepth}{5}
 % Make \paragraph and \subparagraph free-standing
-\makeatletter
 \ifx\paragraph\undefined\else
   \let\oldparagraph\paragraph
-  \renewcommand{\paragraph}{
-    \@ifstar
-      \xxxParagraphStar
-      \xxxParagraphNoStar
-  }
-  \newcommand{\xxxParagraphStar}[1]{\oldparagraph*{#1}\mbox{}}
-  \newcommand{\xxxParagraphNoStar}[1]{\oldparagraph{#1}\mbox{}}
+  \renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
 \fi
 \ifx\subparagraph\undefined\else
   \let\oldsubparagraph\subparagraph
-  \renewcommand{\subparagraph}{
-    \@ifstar
-      \xxxSubParagraphStar
-      \xxxSubParagraphNoStar
-  }
-  \newcommand{\xxxSubParagraphStar}[1]{\oldsubparagraph*{#1}\mbox{}}
-  \newcommand{\xxxSubParagraphNoStar}[1]{\oldsubparagraph{#1}\mbox{}}
+  \renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
 \fi
-\makeatother
 
 
 \providecommand{\tightlist}{%
@@ -95,6 +81,7 @@
 \usepackage{amsmath}
 \usepackage{tikz}
 \usepackage{xcolor}
+\usepackage{svg}
 \usepackage{arxiv}
 \usepackage{orcidlink}
 \usepackage{amsmath}
@@ -140,7 +127,6 @@
 \@ifpackageloaded{caption}{}{\usepackage{caption}}
 \@ifpackageloaded{subcaption}{}{\usepackage{subcaption}}
 \makeatother
-
 \ifLuaTeX
   \usepackage{selnolig}  % disable illegal ligatures
 \fi
@@ -162,7 +148,6 @@ Optimization, Karush-Kuhn-Tucker (KKT) Conditions, Neural Networks},
   urlcolor={Blue},
   pdfcreator={LaTeX via pandoc}}
 
-
 \renewcommand{\today}{September 11, 2024}
 \newcommand{\runninghead}{A Preprint }
 \title{KKT-Informed Neural Network}
@@ -174,7 +159,8 @@ Optimization, Karush-Kuhn-Tucker (KKT) Conditions, Neural Networks},
 \makeatother
 \subtitle{A Parallel Solver for Parametric Convex Optimization Problems}
 \def\asep{\\\\\\ } % default: all authors on same column
-\author{\textbf{Carmine Delle Femine}\\Department of Data Intelligence
+\author{\textbf{Carmine Delle
+Femine}~\orcidlink{0009-0005-7964-8911}\\Department of Data Intelligence
 for Energy and Industrial Processes\\Vicomtech Foundation\\Donostia-San
 Sebastián,\ 20009\\\href{mailto:cdellefemine@vicomtech.org}{cdellefemine@vicomtech.org}}
 \date{September 11, 2024}
@@ -197,7 +183,6 @@ optimization problems.
 Optimization \sep Parametric Optimization \sep Convex
 Optimization \sep Karush-Kuhn-Tucker (KKT) Conditions \sep 
 Neural Networks
-
 
 
 \section{Introduction}\label{introduction}
@@ -258,6 +243,18 @@ Karush-Kuhn-Tucker conditions (KKT) \citep{boydConvexOptimization2004}:
 
 \section{Proposed method}\label{proposed-method}
 
+\begin{figure}
+
+\centering{
+
+\includegraphics[width=6in,height=\textheight]{Preprint_files/mediabag/kinn.pdf}
+
+}
+
+\caption{\label{fig-architecture}KINN architecture}
+
+\end{figure}%
+
 KKT-Informed Neural Network (KINN) builds upon the principles of
 Physics-Informed Neural Networks (PINNs)
 \citep{raissiPhysicsinformedNeuralNetworks2019a}, inducing compliance
@@ -265,12 +262,18 @@ with Karush-Kuhn-Tucker (KKT) through a learning bias, directly coding
 their violation into the loss function that will be minimized in the
 training phase.
 
-The network is designed as a multi-layer perceptron (MLP) and processes
-a batch of \(B\) problem parameters
-\(\Theta \in \mathbb{R}^{B \times k}\), \(\Theta_i = \theta^{(i)}\). The
-network outputs \(\hat{X}\), \(\hat\Lambda\), \(\hat{N}\). A ReLU
-function is applied to the branch predicting \(\hat\Lambda\) to ensure
-its feasibility.
+The objective is to processes a batch of \(B\) problem parameters
+\(\Theta \in \mathbb{R}^{B \times k}\), \(\Theta_i = \theta^{(i)}\) and
+have as output \(\hat{X}\), \(\hat\Lambda\), \(\hat{N}\). Assuming to
+know the range of feasibility of each parameter, \(\Theta\) will be
+scaled in order to obtain \(\Theta^\prime \in [-1 , 1]^{B \times k}\)
+which will be used to fed the netowrk, aiding the convergence. Netwrok
+architecture is shown in Figure~\ref{fig-architecture}. An embedding for
+\(\Theta\) is learned through a MLP, where each layer has a skip
+connection to the previous one. This embedding is then used as input to
+three MLPs, predicting respectively \(\hat{X}\), \(\hat\Lambda\),
+\(\hat{N}\). A softplus function is applied to the network predicting
+\(\hat\Lambda\) to ensure its feasibility.
 
 \begin{align}
 [\hat{X}, \hat{\Lambda}, \hat{N}] &= \textrm{KINN}(\Theta)\\
@@ -305,7 +308,10 @@ be \(\mathcal{A}(\mathcal{J})\). The aggregator chosen is
 \(\mathcal{A}_{\mathrm{UPGrad}}\), described in
 \citep{quintonJacobianDescentMultiObjective2024a}.
 
-\section{Case study}\label{case-study}
+\section{Case studies}\label{case-studies}
+
+\subsection{Projection onto a convex
+polythope}\label{projection-onto-a-convex-polythope}
 
 A renewable energy generator in a power grid is used as a test case for
 this approach.. The generator's active and reactive power injections
@@ -314,7 +320,7 @@ constraints. As such, the desired setpoints \((a_P, a_Q)\) must be
 projected onto the feasible set defined by these constraints. This
 problem is taken from \citep{henryGymANMReinforcementLearning2021}.
 
-\subsection{Problem description}\label{problem-description}
+\subsubsection{Problem description}\label{problem-description}
 
 The feasible set \(\mathcal{D}\) (shown in Figure \(\ref{fig:set}\)) is
 defined by the physical parameters of the generator
@@ -419,7 +425,7 @@ With associated KKT conditions: \begin{align}
     (a-{x}^*) + G^T\lambda^*  = 0 &
 \end{align}
 
-\subsection{Experimental results}\label{experimental-results}
+\subsubsection{Experimental results}\label{experimental-results}
 
 The problem described has a two-dimensional optimization variable, seven
 scalar parameters and seven constraints:
@@ -466,7 +472,7 @@ where:
     \mathcal{L}_{C}^{(i)}  =& \|G^{(i)^{T}}\hat\lambda^{(i)}\|_2\\
 \end{align}
 
-\subsubsection{Training}\label{training}
+\paragraph{Training}\label{training}
 
 Training was performed with the Adam optimization algorithm with an
 intial learning rate of \(10^{-3}\) and an exponential scheduler for the
@@ -495,27 +501,11 @@ Loss & Value \\
 \(\mathcal{L}_C\) & 0.0000 \\
 \end{longtable}
 
-\begin{verbatim}
-# A tibble: 10 x 4
-    Step Stationarity Feasibility Complementarity
-   <dbl>        <dbl>       <dbl>           <dbl>
- 1     1       18.5     0                   1.97 
- 2     2        9.68    0                   1.37 
- 3     3        5.05    0                   1.01 
- 4     4        2.45    0                   0.774
- 5     5        1.56    0                   0.627
- 6     6        1.52    0                   0.521
- 7     7        1.51    0                   0.420
- 8     8        1.21    0                   0.341
- 9     9        0.813   0                   0.278
-10    10        0.551   0.0000260           0.226
-\end{verbatim}
-
 \begin{figure}
 
 \centering{
 
-\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-training-1.pdf}
+\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-training-1.pdf}
 
 }
 
@@ -523,7 +513,7 @@ Loss & Value \\
 
 \end{figure}%
 
-\subsubsection{Evaluation}\label{evaluation}
+\paragraph{Evaluation}\label{evaluation}
 
 To evaluate the approach presented here, the ``cvxpylayers'' library
 \citep{agrawalDifferentiableConvexOptimization2019a}, which implements a
@@ -553,11 +543,11 @@ took \(2.35~\textrm{s}\) as opposed to KINN's \(0.06~\textrm{s}\).
 \begin{longtable}[]{@{}cc@{}}
 \caption{Evaluation metrics}\label{tbl-eval}\tabularnewline
 \toprule\noalign{}
-Mertric & Value \\
+Metric & Value \\
 \midrule\noalign{}
 \endfirsthead
 \toprule\noalign{}
-Mertric & Value \\
+Metric & Value \\
 \midrule\noalign{}
 \endhead
 \bottomrule\noalign{}
@@ -572,7 +562,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-val-1.pdf}
+\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-1.pdf}
 
 }
 
@@ -584,7 +574,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-val-2.pdf}
+\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-2.pdf}
 
 }
 
@@ -596,7 +586,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-val-3.pdf}
+\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-3.pdf}
 
 }
 
@@ -608,7 +598,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-val-4.pdf}
+\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-4.pdf}
 
 }
 
@@ -624,7 +614,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/figure-pdf/fig-times-1.pdf}
+\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-times-1.pdf}
 
 }
 
@@ -663,7 +653,6 @@ problem domains.
 
 
   \bibliography{Preprint.bib}
-
 
 
 \end{document}

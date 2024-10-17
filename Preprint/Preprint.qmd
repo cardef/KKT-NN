@@ -2,7 +2,10 @@
 title: KKT-Informed Neural Network
 subtitle: A Parallel Solver for Parametric Convex Optimization Problems
 author: 
-    name: Carmine Delle Femine
+    name: 
+      given: Carmine
+      family: Delle Femine
+    orcid: 0009-0005-7964-8911
     email: cdellefemine@vicomtech.org
     affiliation:
         name: Vicomtech Foundation
@@ -26,7 +29,9 @@ date-format: long
 format:
     arxiv-pdf:
         pdf-engine: pdflatex
-        fig-format: pdf
+        pdf-engine-opts:
+          - --shell-escape
+        fig-format: svg
         fig-align: center
         fig.width: 6
         fig.asp: 0.8
@@ -37,7 +42,7 @@ format:
                 fig-width: 6
                 out-width: "70%"
                 fig-align: center
-                dev: pdf
+                dev: svg
                 dpi: 600
         cite-method: natbib
         natbiboptions: numbers
@@ -47,10 +52,12 @@ format:
                 \usepackage{amsmath}
                 \usepackage{tikz}
                 \usepackage{xcolor}
+                \usepackage{svg}
 abstract: |
     A neural network-based approach for solving parametric convex optimization problems is presented, where the network estimates the optimal points given a batch of input parameters. The network is trained by penalizing violations of the Karush-Kuhn-Tucker (KKT) conditions, ensuring that its predictions adhere to these optimality criteria. Additionally, since the bounds of the parameter space are known, training batches can be randomly generated without requiring external data. This method trades guaranteed optimality for significant improvements in speed, enabling parallel solving of a class of optimization problems.
 bibliography: Preprint.bib
-execute: 
+execute:
+  cache: True 
   debug: true
 
 ---
@@ -86,9 +93,14 @@ Assume differentiable cost and constraints functions and that $g_i$ satisfies Sl
 ```
 # Proposed method
 
+
+
+![KINN architecture](kinn.svg){#fig-architecture width=6in fig-align="center"}
+
 KKT-Informed Neural Network (KINN) builds upon the principles of Physics-Informed Neural Networks (PINNs) [@raissiPhysicsinformedNeuralNetworks2019a], inducing compliance with Karush-Kuhn-Tucker (KKT) through a learning bias, directly coding their violation into the loss function that will be minimized in the training phase.
 
-The network is designed as a multi-layer perceptron (MLP) and processes a batch of $B$ problem parameters $\Theta \in \mathbb{R}^{B \times k}$, $\Theta_i = \theta^{(i)}$. The network outputs $\hat{X}$, $\hat\Lambda$, $\hat{N}$. A ReLU function is applied to the branch predicting $\hat\Lambda$ to ensure its feasibility.
+
+The objective is to process a batch of $B$ problem parameters $\Theta \in \mathbb{R}^{B \times k}$, $\Theta_i = \theta^{(i)}$ and have as output $\hat{X}$, $\hat\Lambda$, $\hat{N}$. Assuming to know the range of feasibility of each parameter, $\Theta$ will be scaled in order to obtain $\Theta^\prime \in [-1 , 1]^{B \times k}$ which will be used to fed the network, aiding the convergence. network architecture is shown in @fig-architecture. An embedding for $\Theta^\prime$ is learned through a MLP, where each layer has a skip connection to the previous one. This embedding is then used as input to three MLPs, predicting respectively $\hat{X}$, $\hat\Lambda$, $\hat{N}$. A softplus function is applied to the network predicting $\hat\Lambda$ to ensure its feasibility.
 
 ```{=tex}
 \begin{align}
@@ -120,10 +132,12 @@ where:
 
 This vector-valued loss function is minimized through a Jacobian descent [@quintonJacobianDescentMultiObjective2024a]. Let $\mathcal{J} \in \mathbb{R}^{P\times4}$ the Jacobian matrix of $\mathcal{L}$, with $P$ the number of parameters of the KINN, $\mathcal{A}: \mathbb{R}^{P\times4} \to \mathbb{R}^{P}$ is called aggregator. The "direction" of the update of networks parameters will be $\mathcal{A}(\mathcal{J})$. The aggregator chosen is $\mathcal{A}_{\mathrm{UPGrad}}$, described in [@quintonJacobianDescentMultiObjective2024a]. 
 
-# Case study
+# Case studies
+
+## Projection onto a convex polythope
 A renewable energy generator in a power grid is used as a test case for this approach.. The generator's active and reactive power injections $(P,Q)$ are controllable, but they must adhere to physical constraints. As such, the desired setpoints $(a_P, a_Q)$ must be projected onto the feasible set defined by these constraints. This problem is taken from [@henryGymANMReinforcementLearning2021].
 
-## Problem description
+### Problem description
 The feasible set $\mathcal{D}$ (shown in Figure $\ref{fig:set}$) is defined by the physical parameters of the generator $\overline{P}_g \in \mathbb{R}_0^+$, $P^+_g \in ]0, \overline{P}_g]$, $\overline{Q}_g \in \mathbb{R}_0^+$, $Q^+_g \in ]0, \overline{Q}_g]$, characterizing the minimum and maximum possible values and the relationships between active and reactive power, and the dynamic value $P^{\textrm{(max)}}_{g,t}$ which indicates the maximum power that can be generated at that time given the external conditions (e.g. wind speed, solar radiation, etc.):
 \begin{equation}
 \mathcal{D} = \{(P, Q) \in \mathbb{R}² | 0 \leq P \leq P^{\textrm{(max)}}_{g,t}, -\overline{Q}_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
@@ -223,7 +237,7 @@ With associated KKT conditions:
     (a-{x}^*) + G^T\lambda^*  = 0 &
 \end{align}
 
-## Experimental results
+### Experimental results
 The problem described has a two-dimensional optimization variable, seven scalar parameters and seven constraints:
 
 \begin{equation}
@@ -267,7 +281,7 @@ where:
 \end{align}
 ```
 
-### Training
+#### Training
 
 Training was performed with the Adam optimization algorithm with an intial learning rate of $10^{-3}$ and an exponential scheduler for the latter with a $\gamma$ of $0.99986$. An early stopping condition occurred when no progress occurred on any of the constituent terms of the loss for $5000$ steps.
 
@@ -301,17 +315,32 @@ library(extrafont)
 #| echo: false
 #| fig-cap: "Loss terms during training"
 log_df <- read_csv("../Projection/log.csv", show_col_types=FALSE)
-print(log_df)
 log_df <- log_df%>% pivot_longer(!Step, names_to="Loss", values_to="Value")
 
 extrafont::loadfonts(quiet = TRUE)
-ggplot(log_df, aes(x=Step, y=Value, color=Loss)) + geom_line()   + scale_colour_tableau(
+ggplot(log_df, aes(x=Step, y=Value, color=Loss)) + geom_line()   + scale_y_continuous(transform = "pseudo_log")+scale_colour_tableau(
   palette = "Tableau 10", direction=-1
 ) + theme_light()
 #ggpar(plot, yscale="log10")
 ```
 
-### Evaluation
+
+```{r}
+params_df <- read_csv("../Projection/param_analysis.csv", show_col_types=FALSE)
+
+#ggplot(df, aes(x=x, y=y, fill=z)) + geom_tile()  + theme_minimal()
+ggally_mysmooth <- function(data, mapping, ...){
+    vars = unique(unlist(lapply(mapping, all.vars)))
+    grid <- with(data, interp(x = data[[vars[1]]], y = data[[vars[2]]], z = data[[vars[3]]], linear = TRUE, extrap = FALSE,
+                            xo = seq(-1, 1, length = 100), 
+                            yo = seq(-1, 1, length = 100)))
+
+    df <- as.data.frame(interp2xyz(grid))
+    ggplot(data = df, mapping=aes(x,y,fill=z)) +geom_raster(interpolate=TRUE, show.legend=TRUE)  +  scale_fill_gradient2_tableau(palette = "Orange-Blue Diverging", transform=c("log10", "reverse")) + theme_classic()
+}
+ggpairs(params_df, mapping=aes(fill=sum),columns = 2:8, upper = list(continuous = "blank"), diag = list(continuous = "blankDiag"), lower = list(continuous = ggally_mysmooth), legend=8) + theme(legend.position="bottom")
+```
+#### Evaluation
 
 To evaluate the approach presented here, the “cvxpylayers” library [@agrawalDifferentiableConvexOptimization2019a], which implements a batched solver via multi-threading, was used as a baseline. The validation set consists of 1000 samples, generated by taking the physical parameters of the two generators present in the use case presented in [@henryGymANMReinforcementLearning2021] and, for each of them, simulating 500 random inputs $(a_P, a_Q)$ and external condition $P^{\textrm{(max)}}_{g,t}$. Specifically these parameters are:
 
@@ -324,7 +353,7 @@ The metrics for validation were the mean absolute error (MAE) and $R^2$. Last va
 
 By increasing the number of points, an inference time comparison was performed on an Apple M2 Pro processor with backend for PyTorch's MPS. The difference is remarkable, about two orders of magnitude (@fig-times): with a batch size of $1000$, cvxpylayers took $2.35~\textrm{s}$ as opposed to KINN's $0.06~\textrm{s}$.
 
-| Mertric            | Value  |
+| Metric            | Value  |
 |:---------------:|:------:|
 | MAE| 0.0056 p.u.|
 | $R^{2}$  | 0.9972 |
@@ -356,26 +385,18 @@ ggplot(metrics_df%>%select(Step, R2), aes(x=Step, y=R2,)) + geom_line()   + scal
   palette = "Tableau 10", direction=-1
 ) + scale_y_log10("Value") + theme_light()
 ```
-```{python}
+```{r}
 #| label: fig-times
 #| echo: false
 #| fig-cap: "Computation time comparison"
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set_context("paper")
-sns.set(style='ticks', palette='tab10')
-sns.despine()
+times_df <- read_csv("../Projection/times.csv", show_col_types=FALSE)
 
-times = pd.read_csv("plots/times.csv")
-plt.yscale("log")
-plt.plot(times['size'], times['KINN'])
-plt.plot(times['size'], times['CVXPY'])
-plt.tight_layout()
-plt.legend(["KINN", "CVXPY"], loc="lower right")
-plt.xlabel("Batch size")
-plt.ylabel("Time (s)")
-plt.show()
+times_df <- times_df%>% pivot_longer(c(KINN, CVXPY), names_to="Method", values_to="Time")
+
+extrafont::loadfonts(quiet = TRUE)
+ggplot(times_df, aes(x=Batch_size, y=Time, color=Method)) + geom_line()   + scale_colour_tableau(
+  palette = "Tableau 10", direction=-1
+) + scale_y_log10() + theme_light()
 ```
 # Conclusions
 
