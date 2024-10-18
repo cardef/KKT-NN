@@ -24,5 +24,5 @@ ggally_mysmooth <- function(data, mapping, ...){
     df <- as.data.frame(interp2xyz(grid))
     ggplot(data = df, mapping=aes(x,y,fill=z)) +geom_raster(interpolate=TRUE, show.legend=TRUE)  +  scale_fill_gradient2_tableau(palette = "Orange-Blue Diverging", transform=c("log10", "reverse")) + theme_classic()
 }
-plot <- ggpairs(params_df, mapping=aes(fill=sum),columns = 2:8, upper = list(continuous = "blank"), diag = list(continuous = "blankDiag"), lower = list(continuous = ggally_mysmooth), legend=8) + theme(legend.position="bottom")
+plot <- ggpairs(params_df, mapping=aes(fill=sum),columns = 1:7, upper = list(continuous = "blank"), diag = list(continuous = "blankDiag"), lower = list(continuous = ggally_mysmooth), legend=7) + theme(legend.position="bottom")
 ggsave("Projection/param_analysis.svg", plot)

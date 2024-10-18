@@ -241,6 +241,8 @@ Karush-Kuhn-Tucker conditions (KKT) \citep{boydConvexOptimization2004}:
     \nabla_{x^*} f(x^*, \theta) + \sum\nolimits_{i=1}^m \lambda^*_i\nabla_{x^*} g_i(x^*, \theta) + A(\theta)^T\nu^* = 0 &
 \end{align}
 
+\section{State of the art}\label{state-of-the-art}
+
 \section{Proposed method}\label{proposed-method}
 
 \begin{figure}
@@ -262,18 +264,24 @@ with Karush-Kuhn-Tucker (KKT) through a learning bias, directly coding
 their violation into the loss function that will be minimized in the
 training phase.
 
-The objective is to processes a batch of \(B\) problem parameters
+The objective is to process a batch of \(B\) problem parameters
 \(\Theta \in \mathbb{R}^{B \times k}\), \(\Theta_i = \theta^{(i)}\) and
-have as output \(\hat{X}\), \(\hat\Lambda\), \(\hat{N}\). Assuming to
-know the range of feasibility of each parameter, \(\Theta\) will be
-scaled in order to obtain \(\Theta^\prime \in [-1 , 1]^{B \times k}\)
-which will be used to fed the netowrk, aiding the convergence. Netwrok
-architecture is shown in Figure~\ref{fig-architecture}. An embedding for
-\(\Theta\) is learned through a MLP, where each layer has a skip
-connection to the previous one. This embedding is then used as input to
-three MLPs, predicting respectively \(\hat{X}\), \(\hat\Lambda\),
-\(\hat{N}\). A softplus function is applied to the network predicting
-\(\hat\Lambda\) to ensure its feasibility.
+produce the outputs \(\hat{X}\), \(\hat\Lambda\), \(\hat{N}\). Assuming
+that the range of each parameter is known a priori, \(\Theta\) is
+linearly scaled to obtain a normalized parameter batch
+\(\Theta^\prime \in [-1 , 1]^{B \times k}\) , which serves as the input
+to the neural network to facilitate numerical stability and enhance
+convergence during training. The network architecture consists of a
+Multi-Layer Perceptron (MLP) with skip connections, which produces a
+shared embedding of the scaled parameter batch \(\Theta^\prime\). This
+shared embedding is then used as input to three separate MLPs, each
+tasked with predicting one of the outputs: the optimal primal variables
+\(\hat{X}\) and the dual variables \(\hat{\Lambda}\), \(\hat{N}\). The
+shared embedding ensures that the network captures the common structure
+of the parameter space, while the individual MLPs specialize in their
+respective prediction tasks, thereby improving both training efficiency
+and model accuracy. To ensure feasibility, a softplus activation
+function is applied to \(\hat{\Lambda}\).
 
 \begin{align}
 [\hat{X}, \hat{\Lambda}, \hat{N}] &= \textrm{KINN}(\Theta)\\
@@ -308,7 +316,29 @@ be \(\mathcal{A}(\mathcal{J})\). The aggregator chosen is
 \(\mathcal{A}_{\mathrm{UPGrad}}\), described in
 \citep{quintonJacobianDescentMultiObjective2024a}.
 
+\newpage{}
+
 \section{Case studies}\label{case-studies}
+
+\subsection{Portfolio optimization}\label{portfolio-optimization}
+
+\subsubsection{Problem description}\label{problem-description}
+
+\subsubsection{Experimental results}\label{experimental-results}
+
+\paragraph{Training}\label{training}
+
+\paragraph{Evaluation}\label{evaluation}
+
+\subsection{Model predictive control}\label{model-predictive-control}
+
+\subsubsection{Problem description}\label{problem-description-1}
+
+\subsubsection{Experimental results}\label{experimental-results-1}
+
+\paragraph{Training}\label{training-1}
+
+\paragraph{Evaluation}\label{evaluation-1}
 
 \subsection{Projection onto a convex
 polythope}\label{projection-onto-a-convex-polythope}
@@ -320,7 +350,7 @@ constraints. As such, the desired setpoints \((a_P, a_Q)\) must be
 projected onto the feasible set defined by these constraints. This
 problem is taken from \citep{henryGymANMReinforcementLearning2021}.
 
-\subsubsection{Problem description}\label{problem-description}
+\subsubsection{Problem description}\label{problem-description-2}
 
 The feasible set \(\mathcal{D}\) (shown in Figure \(\ref{fig:set}\)) is
 defined by the physical parameters of the generator
@@ -333,7 +363,7 @@ reactive power, and the dynamic value \(P^{\textrm{(max)}}_{g,t}\) which
 indicates the maximum power that can be generated at that time given the
 external conditions (e.g.~wind speed, solar radiation, etc.):
 \begin{equation}
-\mathcal{D} = \{(P, Q) \in \mathbb{R}² | 0 \leq P \leq P^{\textrm{(max)}}_{g,t}, -\overline{Q}_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
+\mathcal{D} = \{(P, Q) \in \mathbb{R}^2 | 0 \leq P \leq P^{\textrm{(max)}}_{g,t}, -\overline{Q}_g \leq Q \leq \overline{Q}_g, Q \leq \tau^{(1)}_g P + \rho_g^{(1)}, Q \geq \tau^{(2)}_g P + \rho_g^{(2)}\}
 \end{equation}
 
 where:
@@ -425,20 +455,41 @@ With associated KKT conditions: \begin{align}
     (a-{x}^*) + G^T\lambda^*  = 0 &
 \end{align}
 
-\subsubsection{Experimental results}\label{experimental-results}
+\subsubsection{Experimental results}\label{experimental-results-2}
 
 The problem described has a two-dimensional optimization variable, seven
 scalar parameters and seven constraints:
 
 \begin{equation}
- [\hat{X}, \hat\Lambda] = \mathrm{KINN}(\Theta)
+ [\hat{X}, \hat\Lambda] = \mathrm{KINN}(\Theta^\prime)
 \end{equation}
 
 with: \begin{align}
-\Theta \in \mathbb{R}^{B \times 7}, \quad&\Theta_{i} = (a_P^{(i)}, a_Q^{(i)},\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}, P^{\textrm{(max)}^{(i)}}_{g,t})\\
+\Theta^\prime \in \mathbb{R}^{B \times 7}, \quad&\Theta^\prime_{i} = (a_P^{(i)}, a_Q^{(i)},\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}, P^{\textrm{(max)}^{(i)}}_{g,t})\\
 \hat{X} \in \mathbb{R}^{B \times 2}, \quad&\hat{X}_{i} = \hat{x}^{(i)} = (\hat{P}^{(i)}, \hat{Q}^{(i)})\\
 \hat\Lambda \in \mathbb{R}_+^{0^{B \times 7}}, \quad&\hat\Lambda_{i} = \hat\lambda^{(i)}
 \end{align}
+
+\begin{longtable}[]{@{}cc@{}}
+\caption{Parameters range}\label{tbl-proj-parameters}\tabularnewline
+\toprule\noalign{}
+Parameter & Range \\
+\midrule\noalign{}
+\endfirsthead
+\toprule\noalign{}
+Parameter & Range \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\(a_P\) & \([0 ,1]\) \\
+\(a_Q\) & \([-1 ,1]\) \\
+\(\overline{P}_g\) & \([0.2 ,0.8]\) \\
+\(P_g^{+}\) & \([0 ,\overline{P}_g]\) \\
+\(\overline{Q}_g\) & \([0.2 ,0.8]\) \\
+\(Q_g^{+}\) & \([0 ,\overline{Q}_g]\) \\
+\(P^{\textrm{(max)}}_{g}\) & \([0 ,\overline{P}_g]\) \\
+\end{longtable}
 
 The network is composed by three hidden layers of \(512\) neurons each,
 with a LeakyReLU (negative slope of \(0.01\)) as activation function and
@@ -472,7 +523,7 @@ where:
     \mathcal{L}_{C}^{(i)}  =& \|G^{(i)^{T}}\hat\lambda^{(i)}\|_2\\
 \end{align}
 
-\paragraph{Training}\label{training}
+\paragraph{Training}\label{training-2}
 
 Training was performed with the Adam optimization algorithm with an
 intial learning rate of \(10^{-3}\) and an exponential scheduler for the
@@ -505,7 +556,7 @@ Loss & Value \\
 
 \centering{
 
-\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-training-1.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-training-1.pdf}
 
 }
 
@@ -513,7 +564,19 @@ Loss & Value \\
 
 \end{figure}%
 
-\paragraph{Evaluation}\label{evaluation}
+\begin{figure}
+
+\centering{
+
+\includegraphics[width=1\textwidth,height=\textheight]{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-params-1.pdf}
+
+}
+
+\caption{\label{fig-params}Loss terms during training}
+
+\end{figure}%
+
+\paragraph{Evaluation}\label{evaluation-2}
 
 To evaluate the approach presented here, the ``cvxpylayers'' library
 \citep{agrawalDifferentiableConvexOptimization2019a}, which implements a
@@ -562,7 +625,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-1.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-1.pdf}
 
 }
 
@@ -574,7 +637,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-2.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-2.pdf}
 
 }
 
@@ -586,7 +649,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-3.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-3.pdf}
 
 }
 
@@ -598,7 +661,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-4.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-val-4.pdf}
 
 }
 
@@ -614,7 +677,7 @@ MAE & 0.0056 p.u. \\
 
 \centering{
 
-\includegraphics{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-times-1.pdf}
+\includegraphics[width=0.7\textwidth,height=\textheight]{Preprint_files/mediabag/Preprint_files/figure-pdf/fig-times-1.pdf}
 
 }
 

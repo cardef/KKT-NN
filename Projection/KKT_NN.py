@@ -1,4 +1,5 @@
 import torch
+import random
 import numpy as np
 import pandas as pd
 from torch import nn, optim
@@ -12,6 +13,14 @@ from datetime import datetime
 from tqdm import tqdm
 from pickle import load
 
+random.seed(42)     # python random generator
+np.random.seed(42)  # numpy random generator
+torch.manual_seed(42)
+torch.cuda.manual_seed_all(42)
+
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+torch.use_deterministic_algorithms(True)
 
 class EarlyStopper:
     def __init__(self, patience=1, min_delta=0):
@@ -72,9 +81,9 @@ class KINN(nn.Module):
         return sol, lambda_ 
 class KKT_NN:
     def __init__(self):
-        self.device = torch.device("mps")
+        self.device = 'cpu' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
         self.kinn = KINN().to(self.device)
-        self.sobol_eng = torch.quasirandom.SobolEngine(7, scramble=True, seed=42,)
+        self.sobol_eng = torch.quasirandom.SobolEngine(7, scramble=True, seed=42)
         self.G = torch.Tensor(
                 [
                     [-1, 0], [1, 0], [1, 0], [0, -1], [0, 1], [0, 1], [0, -1]

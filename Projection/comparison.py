@@ -2,13 +2,21 @@ import numpy as np
 import cvxpy as cp
 import torch
 import pandas as pd
+import random
 from cvxpylayers.torch import CvxpyLayer
 from pickle import load
 from time import time
 from tqdm import trange
 from KKT_NN import KKT_NN
 
+random.seed(42)     # python random generator
+np.random.seed(42)  # numpy random generator
+torch.manual_seed(42)
+torch.cuda.manual_seed_all(42)
 
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+torch.use_deterministic_algorithms(True)
 device = torch.device("cpu" if torch.cuda.is_available() else "mps")
 
 

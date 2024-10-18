@@ -206,7 +206,7 @@ class KKT_NN:
             val_loss = nn.functional.l1_loss(U, y)
             val_r2 = R2Score(self.horizon).to(self.device)(U, y)
             val_mape = MeanAbsolutePercentageError().to(self.device)(U, y)
-            rmse = MeanSquaredError(squared=False).to(self.device)(sol_unnormed, y)
+            rmse = MeanSquaredError(squared=False).to(self.device)(U, y)
 
             self.r2.append(val_r2.item())
             self.mape.append(val_mape.item())
