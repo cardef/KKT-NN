@@ -1,32 +1,41 @@
-# utils.py
+# src/utils.py
+
 import torch
 
-def transform_variables(variable_values, variables_info, mode='normalize'):
+def transform_variables(variables, variables_info, mode='normalize'):
     """
-    Normalize or denormalize variables based on the mode.
+    Transforms variables by normalizing or denormalizing them.
 
-    Parameters:
-    - variable_values (dict): Dictionary of variables with their values.
-    - variables_info (dict): Dictionary containing variables' bounds and dependencies.
-    - mode (str): 'normalize' or 'denormalize'.
+    Args:
+        variables (dict): Dictionary of variables.
+        variables_info (dict): Dictionary containing variable information (dimensions, bounds).
+        mode (str): Transformation mode, 'normalize' or 'denormalize'.
 
     Returns:
-    - transformed_vars (dict): Dictionary of transformed variables.
+        dict: Dictionary of transformed variables.
     """
-    transformed_vars = {}
-    params = {}
-    for name in variables_info:
-        var_info = variables_info[name]
-        x_min, x_max = var_info['bounds']
-        x_min = x_min if not callable(x_min) else x_min(params)
-        x_max = x_max if not callable(x_max) else x_max(params)
-        var_value = variable_values[name]
+    transformed = {}
+    for name, tensor in variables.items():
+        bounds = variables_info[name]['bounds']
         if mode == 'normalize':
-            transformed_var = 2 * (var_value - x_min) / (x_max - x_min) - 1
+            x_min, x_max = bounds
+            # Handle bounds if they are callable
+            if callable(x_min):
+                x_min = x_min(variables)
+            if callable(x_max):
+                x_max = x_max(variables)
+            x_min = x_min if isinstance(x_min, torch.Tensor) else torch.tensor([x_min], device=tensor.device)
+            x_max = x_max if isinstance(x_max, torch.Tensor) else torch.tensor([x_max], device=tensor.device)
+            transformed[name] = 2 * (tensor - x_min) / (x_max - x_min) - 1  # Normalize to [-1, 1]
         elif mode == 'denormalize':
-            transformed_var = (var_value + 1) * (x_max - x_min) / 2 + x_min
+            x_min, x_max = bounds
+            if callable(x_min):
+                x_min = x_min(variables)
+            if callable(x_max):
+                x_max = x_max(variables)
+            x_min = x_min if isinstance(x_min, torch.Tensor) else torch.tensor([x_min], device=tensor.device)
+            x_max = x_max if isinstance(x_max, torch.Tensor) else torch.tensor([x_max], device=tensor.device)
+            transformed[name] = (tensor + 1) * (x_max - x_min) / 2 + x_min  # Denormalize
         else:
             raise ValueError("Mode must be 'normalize' or 'denormalize'")
-        transformed_vars[name] = transformed_var
-        params[name] = transformed_var if mode == 'denormalize' else var_value
-    return transformed_vars
+    return transformed
