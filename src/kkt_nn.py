@@ -242,8 +242,8 @@ class KKTNN(nn.Module):
         """
         embedding = self.shared(x)
         decision = self.decision_output(embedding)
-        dual_eq = self.dual_eq_output(embedding)
-        dual_ineq = self.dual_ineq_output(embedding)
+        dual_eq = self.dual_eq_output(embedding) if self.dual_eq_output is not None else None
+        dual_ineq = self.dual_ineq_output(embedding) if self.dual_ineq_output is not None else None
         return decision, dual_eq, dual_ineq
 
 class EarlyStopper:
@@ -332,25 +332,23 @@ def kkt_loss(problem, decision_vars, dual_eq_vars, dual_ineq_vars, parameters):
         tuple: (stationarity_loss, feasibility_loss, complementarity_loss)
     """
     # Enable gradient computation for decision variables
-    cost = problem.cost_function(decision_vars, parameters)  # Tensor of shape (batch_size,)
+    cost = problem.cost_function(decision_vars, parameters)
     
-    # Initialize Lagrangian with the cost
     lagrangian = cost
-    for dual_eq, constraint in zip(dual_eq_vars.T, problem.constraints):
-        if constraint.type == 'equality':
-            lagrangian += dual_eq * constraint.get_constraint(decision_vars, parameters)
+    if dual_eq_vars is not None:
+        for dual_eq, constraint in zip(dual_eq_vars.T, problem.constraints):
+            if constraint.type == 'equality':
+                lagrangian += dual_eq * constraint.get_constraint(decision_vars, parameters)
     
-    for dual_ineq, constraint in zip(dual_ineq_vars.T, problem.constraints):
-        if constraint.type == 'inequality':
-            lagrangian += dual_ineq * constraint.get_constraint(decision_vars, parameters)
+    if dual_ineq_vars is not None:
+        for dual_ineq, constraint in zip(dual_ineq_vars.T, problem.constraints):
+            if constraint.type == 'inequality':
+                lagrangian += dual_ineq * constraint.get_constraint(decision_vars, parameters)
     
-    # Compute gradient of Lagrangian w.r.t. decision variables
     grad_L = torch.autograd.grad(lagrangian.sum(), decision_vars, retain_graph=True, create_graph=True)[0]
     
-    # Stationarity loss: Mean of squared gradients
     stationarity_loss = torch.mean(torch.sum(grad_L**2, dim=1))
     
-    # Feasibility loss: Mean squared violation of constraints
     feasibility_loss = 0.0
     for constraint in problem.constraints:
         expr = constraint.get_constraint(decision_vars, parameters)
@@ -359,15 +357,16 @@ def kkt_loss(problem, decision_vars, dual_eq_vars, dual_ineq_vars, parameters):
         elif constraint.type == 'inequality':
             feasibility_loss += torch.mean(torch.relu(expr)**2)
     
-    # Complementarity loss: Dual variables multiplied by constraint violations (only for inequalities)
     complementarity_loss = 0.0
-    for dual_ineq, constraint in zip(dual_ineq_vars.T, problem.constraints):
-        if constraint.type == 'inequality':
-            expr = constraint.get_constraint(decision_vars, parameters)
-            complementarity = dual_ineq * torch.relu(expr)  # Assuming all inequalities are <= 0
-            complementarity_loss += torch.mean(complementarity**2)
+    if dual_ineq_vars is not None:
+        for dual_ineq, constraint in zip(dual_ineq_vars.T, problem.constraints):
+            if constraint.type == 'inequality':
+                expr = constraint.get_constraint(decision_vars, parameters)
+                complementarity = dual_ineq * torch.relu(expr)
+                complementarity_loss += torch.mean(complementarity**2)
     
     return stationarity_loss, feasibility_loss, complementarity_loss
+
 
 class KKT_NN:
     def __init__(self, problem, validation_filepath, 

@@ -51,14 +51,21 @@ def main():
 
         rho_1 = Q_max - tau_1*P_plus
         rho_2 = -Q_max - tau_2*P_plus
-        point = np.array([p, q])
 
         # Inequality constraints for the optimization problem.
-        G = np.array([[-1, 0], [1, 0], [1, 0], [0, -1], [0, 1], [-tau_1, 1], [tau_2, -1]])
+        G = torch.tensor([[-1., 0.], [1., 0.], [1., 0.], [0., -1], [0., 1.], [0., 1.], [0., -1.]])
+        G =G.repeat(P_max.shape[0], 1, 1)
+        G[..., -2 , 0] = -tau_1
+        G[..., -1 , 0] = tau_2
+        h =torch.stack((torch.zeros(P_max.shape[0], dtype=torch.float32), P_max, P_pot, Q_max, Q_max, rho_1, -rho_2), 1)
 
-        h = np.array([P_max, P_max, P_pot, Q_max, Q_max, rho_1, -rho_2])
+        #h = np.array([P_max, P_max, P_pot, Q_max, Q_max, rho_1, -rho_2])
 
-        return G @ decision_vars - h
+        if decision_vars.ndim == 2:
+            return torch.bmm(G, decision_vars.unsqueeze(2)).squeeze() - h
+        
+        else:
+            return G@decision_vars - h
     # Create a list of constraints
     constraints = [
         Constraint(expr_func=constraint, type='inequality'),
@@ -73,7 +80,7 @@ def main():
     )
     
     # Path to the Validation Dataset
-    validation_filepath = "validation_dataset_cvxpy.pkl"  # Change the name if preferred
+    validation_filepath = "projection.pkl"  # Change the name if preferred
     
     # Initialize the KKT Neural Network Model
     model = KKT_NN(problem=problem, validation_filepath=validation_filepath)
