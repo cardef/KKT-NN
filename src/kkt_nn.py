@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.func import grad, vmap, jacrev
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import R2Score, MeanAbsolutePercentageError, MeanSquaredError
@@ -76,8 +77,9 @@ class Constraint:
         self.expr_func = expr_func
         assert type in ['equality', 'inequality'], "Constraint type must be 'equality' or 'inequality'"
         self.type = type
+        self.n_constraints = None
 
-    def get_constraint(self, decision_vars, params):
+    def get_constraints(self, decision_vars, params):
         """
         Computes the constraint expression based on decision variables and parameters.
         
@@ -89,6 +91,16 @@ class Constraint:
             torch.Tensor: Constraint expression.
         """
         expr = self.expr_func(decision_vars, params)
+        if isinstance(expr, list):
+            expr = torch.stack(expr, dim=1)  # Converti la lista in un tensor
+        elif isinstance(expr, torch.Tensor):
+            pass  # Assumi che la forma sia corretta
+        else:
+            raise TypeError("expr_func deve restituire un torch.Tensor o una lista di torch.Tensor")
+
+        if self.n_constraints is None:
+            # Inferisci il numero di vincoli basandosi sulla dimensione dell'espressione
+            self.n_constraints = expr.shape[1]
         return expr
         """ if self.type == 'equality':
             return expr  # Must be equal to zero
@@ -110,7 +122,25 @@ class OptimizationProblem:
         self.decision_variables = decision_variables
         self.cost_function = cost_function
         self.constraints = constraints
+        self.num_eq_constraints, self.num_ineq_constraints = self.count_constraints()
+    def count_constraints(self):
+        """
+        Conta il numero totale di vincoli di uguaglianza e di disuguaglianza.
 
+        Returns:
+            tuple: (num_eq_constraints, num_ineq_constraints)
+        """
+        num_eq = 0
+        num_ineq = 0
+        dummy_batch = torch.zeros(1, len(self.parameters))  # Batch fittizio per inferire i vincoli
+
+        for constraint in self.constraints:
+            expr = constraint.get_constraints(torch.zeros(1, len(self.decision_variables)), dummy_batch)
+            if constraint.type == 'equality':
+                num_eq += expr.shape[1]
+            elif constraint.type == 'inequality':
+                num_ineq += expr.shape[1]
+        return num_eq, num_ineq
     def denormalize_parameters(self, norm_params):
         """
         Denormalizes parameters from [-1, 1] to their original scale.
@@ -334,24 +364,48 @@ def kkt_loss(problem, decision_vars, dual_eq_vars, dual_ineq_vars, parameters):
     # Enable gradient computation for decision variables
     cost = problem.cost_function(decision_vars, parameters)
     
-    lagrangian = cost
-    if dual_eq_vars is not None:
-        for dual_eq, constraint in zip(dual_eq_vars.T, problem.constraints):
-            if constraint.type == 'equality':
-                lagrangian += dual_eq * constraint.get_constraint(decision_vars, parameters)
-    
+    def lagrangian_single(decision_var, dual_eq, dual_ineq, param):
+        """
+        Calcola il Lagrangiano per un singolo campione.
+
+        Args:
+            decision_var (torch.Tensor): Variabile decisionale denormalizzata, forma (num_decision_vars,).
+            dual_eq (torch.Tensor or None): Variabili duali per vincoli di uguaglianza, forma (num_eq_constraints,).
+            dual_ineq (torch.Tensor or None): Variabili duali per vincoli di disuguaglianza, forma (num_ineq_constraints,).
+            param (torch.Tensor): Parametri denormalizzati, forma (num_parameters,).
+
+        Returns:
+            torch.Tensor: Valore scalare del Lagrangiano.
+        """
+        # Calcola il costo
+        cost = self.problem.cost_function.compute_pytorch(decision_var.unsqueeze(0))  # Assicurati che cost_function abbia un metodo compute_pytorch
+        lagrangian = cost.squeeze(0)  # Scalar
+
+        # Aggiungi i termini duali per i vincoli di uguaglianza
+        if dual_eq is not None:
+            for i in range(self.num_eq_constraints):
+                expr = self.problem.constraints[i].get_constraints(decision_var.unsqueeze(0), param.unsqueeze(0)).squeeze(0)[i]
+                lagrangian += dual_eq[i] * expr
+
+    # Gestisci i vincoli di disuguaglianza
     if dual_ineq_vars is not None:
-        for dual_ineq, constraint in zip(dual_ineq_vars.T, problem.constraints):
+        ineq_constraint_idx = 0
+        for constraint in problem.constraints:
             if constraint.type == 'inequality':
-                lagrangian += dual_ineq * constraint.get_constraint(decision_vars, parameters)
+                expr = constraint.get_constraints(decision_vars, parameters)  # (batch_size, n_constraints)
+                dual = dual_ineq_vars[:, ineq_constraint_idx:ineq_constraint_idx + constraint.n_constraints]  # (batch_size, n_constraints)
+                lagrangian += (dual * expr).sum(dim=1)  # Somma sui vincoli
+                ineq_constraint_idx += constraint.n_constraints
     
-    grad_L = torch.autograd.grad(lagrangian.sum(), decision_vars, retain_graph=True, create_graph=True)[0]
-    
+    grad_L = torch.autograd.grad(lagrangian, decision_vars, retain_graph=True, create_graph=True)[0]
+    grad_L = vmap(grad(self.lagrangian, argnums=3), in_dims=(0, 0, 0, 0, 0))(
+            actions_unnormed, G, h, sol_unnormed,lambda_
+        )
     stationarity_loss = torch.mean(torch.sum(grad_L**2, dim=1))
     
     feasibility_loss = 0.0
     for constraint in problem.constraints:
-        expr = constraint.get_constraint(decision_vars, parameters)
+        expr = constraint.get_constraints(decision_vars, parameters)
         if constraint.type == 'equality':
             feasibility_loss += torch.mean(expr**2)
         elif constraint.type == 'inequality':
@@ -359,18 +413,22 @@ def kkt_loss(problem, decision_vars, dual_eq_vars, dual_ineq_vars, parameters):
     
     complementarity_loss = 0.0
     if dual_ineq_vars is not None:
-        for dual_ineq, constraint in zip(dual_ineq_vars.T, problem.constraints):
+        ineq_constraint_idx = 0
+        for constraint in problem.constraints:
             if constraint.type == 'inequality':
-                expr = constraint.get_constraint(decision_vars, parameters)
-                complementarity = dual_ineq * torch.relu(expr)
+                expr = constraint.get_constraints(decision_vars, parameters)  # (batch_size, n_constraints)
+                dual = dual_ineq_vars[:, ineq_constraint_idx:ineq_constraint_idx + constraint.n_constraints]  # (batch_size, n_constraints)
+                # Complementarity: dual * expr = 0
+                complementarity = dual * expr  # (batch_size, n_constraints)
                 complementarity_loss += torch.mean(complementarity**2)
+                ineq_constraint_idx += constraint.n_constraints
     
     return stationarity_loss, feasibility_loss, complementarity_loss
 
 
 class KKT_NN:
     def __init__(self, problem, validation_filepath, 
-                 learning_rate=3e-4, patience=1000, device=None):
+                 learning_rate=1e-5, patience=1000, device=None):
         """
         Initializes the KKT-based neural network model, optimizer, scheduler, early stopper, and logging.
         
@@ -382,7 +440,7 @@ class KKT_NN:
             device (str, optional): 'cuda' or 'cpu'. If None, automatically selects based on availability. Defaults to None.
         """
         self.problem = problem
-        self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = device if device else ('cpu' if torch.cuda.is_available() else 'cpu')
         
         # Input dimension: number of parameters
         self.input_dim = len(problem.parameters)
@@ -395,9 +453,9 @@ class KKT_NN:
         # Initialize the neural network model
         self.model = KKTNN(self.input_dim, self.num_eq_constraints, self.num_ineq_constraints, self.num_decision_vars).to(self.device)
         # Initialize the optimizer with weight decay for regularization
-        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-5)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         # Initialize the learning rate scheduler
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=patience//10, factor=0.1, verbose=True)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=patience, factor=0.1, verbose=True)
         # Initialize the early stopper
         self.es = EarlyStopper(patience=patience, min_delta=1e-4, mode='min')  # Based on minimum validation loss
         
@@ -441,7 +499,107 @@ class KKT_NN:
         validation_dataset = ValidationDataset(self.problem, filepath)
         validation_loader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False)
         return validation_loader
-    
+    def kkt_loss(self, decision_vars, dual_eq_vars, dual_ineq_vars, parameters):
+        """
+        Calcola la perdita basata sulle condizioni KKT utilizzando vmap e grad di Functorch.
+
+        Args:
+            decision_vars (torch.Tensor): Variabili decisionali denormalizzate, forma (batch_size, num_decision_vars).
+            dual_eq_vars (torch.Tensor or None): Variabili duali per i vincoli di uguaglianza, forma (batch_size, num_eq_constraints).
+            dual_ineq_vars (torch.Tensor or None): Variabili duali per i vincoli di disuguaglianza, forma (batch_size, num_ineq_constraints).
+            parameters (torch.Tensor): Parametri denormalizzati, forma (batch_size, num_parameters).
+
+        Returns:
+            tuple: (stationarity_loss, feasibility_loss, complementarity_loss)
+        """
+        batch_size = decision_vars.shape[0]
+
+        # Se dual_eq_vars è None, sostituiscilo con un tensore di zeri
+        if dual_eq_vars is None and self.num_eq_constraints > 0:
+            dual_eq_vars = torch.zeros((batch_size, self.num_eq_constraints), device=self.device)
+        elif self.num_eq_constraints == 0:
+            dual_eq_vars = None  # Nessun vincolo di uguaglianza
+
+        # Se dual_ineq_vars è None, sostituiscilo con un tensore di zeri
+        if dual_ineq_vars is None and self.num_ineq_constraints > 0:
+            dual_ineq_vars = torch.zeros((batch_size, self.num_ineq_constraints), device=self.device)
+        elif self.num_ineq_constraints == 0:
+            dual_ineq_vars = None  # Nessun vincolo di disuguaglianza
+
+        # Definisci una funzione interna per il calcolo del Lagrangiano per un singolo campione
+        def lagrangian_single(decision_var, dual_eq, dual_ineq, param):
+            """
+            Calcola il Lagrangiano per un singolo campione.
+
+            Args:
+                decision_var (torch.Tensor): Variabile decisionale denormalizzata, forma (num_decision_vars,).
+                dual_eq (torch.Tensor or None): Variabili duali per vincoli di uguaglianza, forma (num_eq_constraints,).
+                dual_ineq (torch.Tensor or None): Variabili duali per vincoli di disuguaglianza, forma (num_ineq_constraints,).
+                param (torch.Tensor): Parametri denormalizzati, forma (num_parameters,).
+
+            Returns:
+                torch.Tensor: Valore scalare del Lagrangiano.
+            """
+            # Calcola il costo
+            cost = self.problem.cost_function(decision_var.unsqueeze(0), param.unsqueeze(0))  # Assicurati che cost_function abbia un metodo compute_pytorch
+            lagrangian = cost.squeeze(0)  # Scalar
+
+            # Aggiungi i termini duali per i vincoli di uguaglianza
+            if dual_eq is not None:
+                for i in range(self.num_eq_constraints):
+                    expr = self.problem.constraints[i].get_constraints(decision_var.unsqueeze(0), param.unsqueeze(0)).squeeze(0)[i]
+                    lagrangian += dual_eq[i] * expr
+
+            # Aggiungi i termini duali per i vincoli di disuguaglianza
+            if dual_ineq is not None:
+                for i in range(self.num_ineq_constraints):
+                    expr = self.problem.constraints[self.num_eq_constraints + i].get_constraints(decision_var.unsqueeze(0), param.unsqueeze(0)).squeeze(0)[i]
+                    lagrangian += dual_ineq[i] * expr
+
+            return lagrangian
+
+        # Definisci la funzione per calcolare il gradiente del Lagrangiano rispetto a decision_var
+        def grad_lagrangian_single(decision_var, dual_eq, dual_ineq, param):
+            return grad(lagrangian_single, argnums=0)(decision_var, dual_eq, dual_ineq, param)
+
+        if dual_eq_vars is not None and dual_ineq_vars is not None:
+            in_dims = (0, 0, 0, 0)
+        elif dual_eq_vars is None and dual_ineq_vars is not None:
+            in_dims = (0, None, 0, 0)
+        elif dual_eq_vars is not None and dual_ineq_vars is None:
+            in_dims = (0, 0, None, 0)
+        else:
+            in_dims = (0, None, None, 0)
+
+    # Vettorializza la funzione del gradiente del Lagrangiano
+        grad_lagrangian = vmap(grad_lagrangian_single, in_dims=in_dims)
+
+        # Calcola i gradienti per tutto il batch
+        grad_L = grad_lagrangian(decision_vars, dual_eq_vars, dual_ineq_vars, parameters)  # Forma: (batch_size, num_decision_vars)
+
+        # Calcola la perdita di stazionarietà: somma dei quadrati dei gradienti
+        loss_stationarity = torch.mean(torch.sum(grad_L ** 2, dim=1))
+
+        # Calcola la perdita di fattibilità: somma dei quadrati delle violazioni dei vincoli
+        feasibility_loss = 0.0
+        for i, constraint in enumerate(self.problem.constraints):
+            expr = constraint.get_constraints(decision_vars, parameters)  # Forma: (batch_size, n_constraints)
+            if constraint.type == 'equality':
+                feasibility_loss += torch.mean(expr ** 2)
+            elif constraint.type == 'inequality':
+                feasibility_loss += torch.mean(torch.relu(expr) ** 2)
+
+        # Calcola la perdita di complementarietà: somma dei quadrati del prodotto dual * vincolo
+        complementarity_loss = 0.0
+        if dual_ineq_vars is not None:
+            for i in range(self.num_ineq_constraints):
+                expr = self.problem.constraints[self.num_eq_constraints + i].get_constraints(decision_vars, parameters)[:, i]  # Forma: (batch_size,)
+                dual = dual_ineq_vars[:, i]  # Forma: (batch_size,)
+                complementarity = dual * expr  # Forma: (batch_size,)
+                complementarity_loss += torch.mean(complementarity ** 2)
+
+        return loss_stationarity, feasibility_loss, complementarity_loss
+
     def training_step(self, batch_size):
         """
         Performs a single training step.
@@ -465,9 +623,7 @@ class KKT_NN:
         decision_vars = self.problem.denormalize_decision(norm_decision_vars, params)
         
         # Compute KKT-based loss
-        stationarity_loss, feasibility_loss, complementarity_loss = kkt_loss(
-            self.problem, decision_vars, dual_eq_vars, dual_ineq_vars, params
-        )
+        stationarity_loss, feasibility_loss, complementarity_loss = self.kkt_loss(decision_vars, dual_eq_vars, dual_ineq_vars, params)
         loss = stationarity_loss + feasibility_loss + complementarity_loss
         
         # Backpropagation with gradient clipping
