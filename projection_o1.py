@@ -15,17 +15,17 @@ def main():
         Variable("action_Q", -1.0, 1.0),
         Variable("P_max", 0.2, 1.0),
         Variable("Q_max", 0.2, 1.0),
-        Variable("P_pots", 0.0, lambda params: params[..., 2]),
+        Variable("P_pots", 0.0, lambda params: params["P_max"]),
         Variable(
-            "P_plus", 0.1, lambda params: 0.9 * params[..., 2]
+            "P_plus", 0.1, lambda params: 0.9 * params["P_max"]
         ),  # Upper bound depends on P_max (second parameter)
-        Variable("Q_plus", 0.1, lambda params: 0.9 * params[..., 3]),
+        Variable("Q_plus", 0.1, lambda params: 0.9 * params["Q_max"]),
     ]
 
     # Define Decision Variables
     decision_variables = [
-        Variable("P", 0.0, lambda params: params[..., 4]),  # Normalized between [-1, 1]
-        Variable("Q", lambda params: -params[..., 3], lambda params: params[..., 1]),
+        Variable("P", 0.0, lambda params: params["P_pots"]),  # Normalized between [-1, 1]
+        Variable("Q", lambda params: -params["Q_max"], lambda params: params["Q_max"]),
     ]
 
     # Define the Cost Function
@@ -56,7 +56,7 @@ def main():
         rho_2 = -Q_max - tau_2 * P_plus
 
         # Inequality constraints for the optimization problem.
-        G = torch.stack(
+        """ G = torch.stack(
             [
                 torch.stack(
                     [
@@ -87,15 +87,32 @@ def main():
                 -rho_2,
             ),
             1,
-        )
+        ) """
 
         # h = np.array([P_max, P_max, P_pot, Q_max, Q_max, rho_1, -rho_2])
+        """ G = torch.Tensor(
+            [[-1, 0], [1, 0], [1, 0], [0, -1], [0, 1], [-tau_1, 1], [tau_2, -1]]
+        ).to(dtype=torch.float32, device=tau_1.device)
 
-        if decision_vars.ndim == 2:
+        h = torch.Tensor([P_max, P_max, P_pot, Q_max, Q_max, rho_1, -rho_2]).to(
+            dtype=torch.float32, device=tau_1.device
+        ) """
+        if decision_vars.ndim == 42:
             return torch.bmm(G, decision_vars.unsqueeze(2)).squeeze() - h
 
         else:
-            return G @ decision_vars - h
+            # return G @ decision_vars - h
+            return torch.stack(
+                [
+                    -decision_vars[..., 0],
+                    decision_vars[..., 0] - P_max,
+                    decision_vars[..., 0] - P_pot,
+                    -decision_vars[..., 1] - Q_max,
+                    decision_vars[..., 1] - Q_max,
+                    decision_vars[..., 1] - tau_1*decision_vars[..., 0] - rho_1,
+                    -decision_vars[..., 1] + tau_1*decision_vars[..., 0] + rho_2,
+                ], decision_vars[..., 0].ndim
+            )
 
     # Create a list of constraints
     constraints = [

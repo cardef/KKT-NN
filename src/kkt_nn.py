@@ -23,47 +23,38 @@ torch.backends.cudnn.benchmark = False
 
 class Variable:
     def __init__(self, name, min_val, max_val):
-        """
-        Represents a parameter or decision variable with static or dynamic bounds.
-        
-        Args:
-            name (str): Name of the variable.
-            min_val (float or callable): Minimum value or a function to compute the minimum based on parameters.
-            max_val (float or callable): Maximum value or a function to compute the maximum based on parameters.
-        """
         self.name = name
         self.min_val = min_val
         self.max_val = max_val
 
-    def get_min(self, parameters):
-        """
-        Retrieves the minimum value of the variable.
-        
-        Args:
-            parameters (torch.Tensor): Current parameter values.
-        
-        Returns:
-            torch.Tensor: Tensor containing the minimum values.
-        """
+    def get_min(self, denorm_params):
         if callable(self.min_val):
-            return self.min_val(parameters)
+            return self.min_val(denorm_params)
         else:
-            return torch.full((parameters.shape[0],), self.min_val, dtype=torch.float32, device=parameters.device)
+            # Se denorm_params è None, restituisce un tensore con il valore costante
+            if denorm_params is None or not denorm_params:
+                return torch.tensor(self.min_val, dtype=torch.float32)
+            # Altrimenti, restituisce un tensore pieno con il valore costante
+            return torch.full(
+                (denorm_params[next(iter(denorm_params))].shape[0],),
+                self.min_val,
+                dtype=torch.float32,
+                device=denorm_params[next(iter(denorm_params))].device
+            )
 
-    def get_max(self, parameters):
-        """
-        Retrieves the maximum value of the variable.
-        
-        Args:
-            parameters (torch.Tensor): Current parameter values.
-        
-        Returns:
-            torch.Tensor: Tensor containing the maximum values.
-        """
+    def get_max(self, denorm_params):
         if callable(self.max_val):
-            return self.max_val(parameters)
+            return self.max_val(denorm_params)
         else:
-            return torch.full((parameters.shape[0],), self.max_val, dtype=torch.float32, device=parameters.device)
+            if denorm_params is None or not denorm_params:
+                return torch.tensor(self.max_val, dtype=torch.float32)
+            return torch.full(
+                (denorm_params[next(iter(denorm_params))].shape[0],),
+                self.max_val,
+                dtype=torch.float32,
+                device=denorm_params[next(iter(denorm_params))].device
+            )
+
 
 class Constraint:
     def __init__(self, expr_func, type='inequality'):
@@ -100,7 +91,7 @@ class Constraint:
 
         if self.n_constraints is None:
             # Inferisci il numero di vincoli basandosi sulla dimensione dell'espressione
-            self.n_constraints = expr.shape[1]
+            self.n_constraints = expr.shape[-1]
         return expr
         """ if self.type == 'equality':
             return expr  # Must be equal to zero
@@ -132,50 +123,48 @@ class OptimizationProblem:
         """
         num_eq = 0
         num_ineq = 0
-        dummy_batch = torch.zeros(1, len(self.parameters))  # Batch fittizio per inferire i vincoli
+        dummy_batch = torch.zeros(len(self.parameters))  # Batch fittizio per inferire i vincoli
 
         for constraint in self.constraints:
-            expr = constraint.get_constraints(torch.zeros(1, len(self.decision_variables)), dummy_batch)
+            expr = constraint.get_constraints(torch.zeros(len(self.decision_variables)), dummy_batch)
             if constraint.type == 'equality':
-                num_eq += expr.shape[1]
+                num_eq += expr.shape[-1]
             elif constraint.type == 'inequality':
-                num_ineq += expr.shape[1]
+                num_ineq += expr.shape[-1]
         return num_eq, num_ineq
     def denormalize_parameters(self, norm_params):
         """
-        Denormalizes parameters from [-1, 1] to their original scale.
+        Denormalizza i parametri da [-1, 1] alla loro scala originale sequenzialmente.
         
         Args:
-            norm_params (torch.Tensor): Normalized parameters of shape (batch_size, num_parameters).
+            norm_params (torch.Tensor): Parametri normalizzati di forma (batch_size, num_parameters).
         
         Returns:
-            torch.Tensor: Denormalized parameters of shape (batch_size, num_parameters).
+            dict: Dizionario dei parametri denormalizzati {nome_parametro: tensor_denormalizzato}.
         """
-        denorm_params = []
-        for i, var in enumerate(self.parameters):
-            min_val = var.get_min(norm_params)
-            max_val = var.get_max(norm_params)
-            denorm = 0.5 * (norm_params[:, i] + 1.0) * (max_val - min_val) + min_val
-            denorm_params.append(denorm)
-        denorm_params = torch.stack(denorm_params, dim=1)
-        return denorm_params
-
-    def denormalize_decision(self, norm_decisions, parameters):
+        denorm_params = {}
+        for i, var in enumerate(self.parameters):  # Itera direttamente su self.parameters
+            denorm_min = var.get_min(denorm_params)
+            denorm_max = var.get_max(denorm_params)
+            denorm = 0.5 * (norm_params[:, i] + 1.0) * (denorm_max - denorm_min) + denorm_min
+            denorm_params[var.name] = denorm
+        return torch.stack([denorm_params[var.name] for var in self.parameters], dim=1), denorm_params
+    def denormalize_decision(self, norm_decisions, denorm_params):
         """
-        Denormalizes decision variables from [-1, 1] to their original scale.
+        Denormalizza le variabili decisionali da [-1, 1] alla loro scala originale.
         
         Args:
-            norm_decisions (torch.Tensor): Normalized decision variables of shape (batch_size, num_decision_vars).
-            parameters (torch.Tensor): Denormalized parameters of shape (batch_size, num_parameters).
+            norm_decisions (torch.Tensor): Variabili decisionali normalizzate di forma (batch_size, num_decision_vars).
+            denorm_params (dict): Dizionario dei parametri denormalizzati {nome_parametro: tensor_denormalizzato}.
         
         Returns:
-            torch.Tensor: Denormalized decision variables of shape (batch_size, num_decision_vars).
+            torch.Tensor: Variabili decisionali denormalizzate di forma (batch_size, num_decision_vars).
         """
         denorm_decisions = []
         for i, var in enumerate(self.decision_variables):
-            min_val = var.get_min(parameters)
-            max_val = var.get_max(parameters)
-            denorm = 0.5 * (norm_decisions[:, i] + 1.0) * (max_val - min_val) + min_val
+            denorm_min = var.get_min(denorm_params)
+            denorm_max = var.get_max(denorm_params)
+            denorm = 0.5 * (norm_decisions[:, i] + 1.0) * (denorm_max - denorm_min) + denorm_min
             denorm_decisions.append(denorm)
         denorm_decisions = torch.stack(denorm_decisions, dim=1)
         return denorm_decisions
@@ -236,8 +225,7 @@ class KKTNN(nn.Module):
         self.decision_output = nn.Sequential(
             ResidualBlock(hidden_dim),
             ResidualBlock(hidden_dim),
-            nn.Linear(hidden_dim, num_decision_vars),
-            nn.Tanh()  # Outputs between -1 and 1
+            nn.Linear(hidden_dim, num_decision_vars),  # Outputs between -1 and 1
         )
         
         # Conditionally create outputs for dual variables
@@ -255,7 +243,7 @@ class KKTNN(nn.Module):
                 ResidualBlock(hidden_dim),
                 ResidualBlock(hidden_dim),
                 nn.Linear(hidden_dim, num_ineq_constraints),
-                nn.Softplus()  # Ensures outputs are non-negative
+                nn.Softplus(beta=5)  # Ensures outputs are non-negative
             )
         else:
             self.dual_ineq_output = None  # No inequality constraints
@@ -499,6 +487,38 @@ class KKT_NN:
         validation_dataset = ValidationDataset(self.problem, filepath)
         validation_loader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False)
         return validation_loader
+    
+    
+    def lagrangian(self, decision_var, dual_eq, dual_ineq, param):
+            """
+            Calcola il Lagrangiano per un singolo campione.
+
+            Args:
+                decision_var (torch.Tensor): Variabile decisionale denormalizzata, forma (num_decision_vars,).
+                dual_eq (torch.Tensor or None): Variabili duali per vincoli di uguaglianza, forma (num_eq_constraints,).
+                dual_ineq (torch.Tensor or None): Variabili duali per vincoli di disuguaglianza, forma (num_ineq_constraints,).
+                param (torch.Tensor): Parametri denormalizzati, forma (num_parameters,).
+
+            Returns:
+                torch.Tensor: Valore scalare del Lagrangiano.
+            """
+            # Calcola il costo
+            lagrangian = self.problem.cost_function(decision_var, param)  # Assicurati che cost_function abbia un metodo compute_pytorch
+            #lagrangian = cost.squeeze(0)  # Scalar
+
+            # Aggiungi i termini duali per i vincoli di uguaglianza
+            if dual_eq is not None:
+                for i in range(self.num_eq_constraints):
+                    expr = self.problem.constraints[i].get_constraints(decision_var, param)[..., i]
+                    lagrangian += dual_eq[..., i] * expr
+
+            # Aggiungi i termini duali per i vincoli di disuguaglianza
+            if dual_ineq is not None:
+                for i in range(self.num_ineq_constraints):
+                    expr = self.problem.constraints[self.num_eq_constraints + i].get_constraints(decision_var, param)[..., i]
+                    lagrangian += dual_ineq[..., i] * expr
+
+            return lagrangian
     def kkt_loss(self, decision_vars, dual_eq_vars, dual_ineq_vars, parameters):
         """
         Calcola la perdita basata sulle condizioni KKT utilizzando vmap e grad di Functorch.
@@ -526,41 +546,6 @@ class KKT_NN:
         elif self.num_ineq_constraints == 0:
             dual_ineq_vars = None  # Nessun vincolo di disuguaglianza
 
-        # Definisci una funzione interna per il calcolo del Lagrangiano per un singolo campione
-        def lagrangian_single(decision_var, dual_eq, dual_ineq, param):
-            """
-            Calcola il Lagrangiano per un singolo campione.
-
-            Args:
-                decision_var (torch.Tensor): Variabile decisionale denormalizzata, forma (num_decision_vars,).
-                dual_eq (torch.Tensor or None): Variabili duali per vincoli di uguaglianza, forma (num_eq_constraints,).
-                dual_ineq (torch.Tensor or None): Variabili duali per vincoli di disuguaglianza, forma (num_ineq_constraints,).
-                param (torch.Tensor): Parametri denormalizzati, forma (num_parameters,).
-
-            Returns:
-                torch.Tensor: Valore scalare del Lagrangiano.
-            """
-            # Calcola il costo
-            cost = self.problem.cost_function(decision_var.unsqueeze(0), param.unsqueeze(0))  # Assicurati che cost_function abbia un metodo compute_pytorch
-            lagrangian = cost.squeeze(0)  # Scalar
-
-            # Aggiungi i termini duali per i vincoli di uguaglianza
-            if dual_eq is not None:
-                for i in range(self.num_eq_constraints):
-                    expr = self.problem.constraints[i].get_constraints(decision_var.unsqueeze(0), param.unsqueeze(0)).squeeze(0)[i]
-                    lagrangian += dual_eq[i] * expr
-
-            # Aggiungi i termini duali per i vincoli di disuguaglianza
-            if dual_ineq is not None:
-                for i in range(self.num_ineq_constraints):
-                    expr = self.problem.constraints[self.num_eq_constraints + i].get_constraints(decision_var.unsqueeze(0), param.unsqueeze(0)).squeeze(0)[i]
-                    lagrangian += dual_ineq[i] * expr
-
-            return lagrangian
-
-        # Definisci la funzione per calcolare il gradiente del Lagrangiano rispetto a decision_var
-        def grad_lagrangian_single(decision_var, dual_eq, dual_ineq, param):
-            return grad(lagrangian_single, argnums=0)(decision_var, dual_eq, dual_ineq, param)
 
         if dual_eq_vars is not None and dual_ineq_vars is not None:
             in_dims = (0, 0, 0, 0)
@@ -572,22 +557,20 @@ class KKT_NN:
             in_dims = (0, None, None, 0)
 
     # Vettorializza la funzione del gradiente del Lagrangiano
-        grad_lagrangian = vmap(grad_lagrangian_single, in_dims=in_dims)
+        grad_L = vmap(grad(self.lagrangian, argnums=0), in_dims=in_dims)(decision_vars, dual_eq_vars, dual_ineq_vars, parameters)
 
-        # Calcola i gradienti per tutto il batch
-        grad_L = grad_lagrangian(decision_vars, dual_eq_vars, dual_ineq_vars, parameters)  # Forma: (batch_size, num_decision_vars)
 
         # Calcola la perdita di stazionarietà: somma dei quadrati dei gradienti
-        loss_stationarity = torch.mean(torch.sum(grad_L ** 2, dim=1))
+        loss_stationarity = torch.square(grad_L).sum(1)
 
         # Calcola la perdita di fattibilità: somma dei quadrati delle violazioni dei vincoli
         feasibility_loss = 0.0
         for i, constraint in enumerate(self.problem.constraints):
             expr = constraint.get_constraints(decision_vars, parameters)  # Forma: (batch_size, n_constraints)
             if constraint.type == 'equality':
-                feasibility_loss += torch.mean(expr ** 2)
+                feasibility_loss += torch.square(expr).sum(-1)
             elif constraint.type == 'inequality':
-                feasibility_loss += torch.mean(torch.relu(expr) ** 2)
+                feasibility_loss += torch.square(torch.relu(expr)).sum(-1)
 
         # Calcola la perdita di complementarietà: somma dei quadrati del prodotto dual * vincolo
         complementarity_loss = 0.0
@@ -596,7 +579,7 @@ class KKT_NN:
                 expr = self.problem.constraints[self.num_eq_constraints + i].get_constraints(decision_vars, parameters)[:, i]  # Forma: (batch_size,)
                 dual = dual_ineq_vars[:, i]  # Forma: (batch_size,)
                 complementarity = dual * expr  # Forma: (batch_size,)
-                complementarity_loss += torch.mean(complementarity ** 2)
+                complementarity_loss += torch.square(complementarity).sum(-1)
 
         return loss_stationarity, feasibility_loss, complementarity_loss
 
@@ -614,17 +597,19 @@ class KKT_NN:
         # Sample normalized parameters using Sobol sequence
         norm_params = self.sample_parameters(batch_size)  # Shape: (batch_size, num_parameters)
         # Denormalize parameters to their original scale
-        params = self.problem.denormalize_parameters(norm_params)
+
+
         
+        params, params_dict = self.problem.denormalize_parameters(norm_params)
         # Forward pass through the model
-        norm_decision_vars, dual_eq_vars, dual_ineq_vars = self.model(norm_params)
+        decision_vars, dual_eq_vars, dual_ineq_vars = self.model(norm_params)
         
         # Denormalize decision variables
-        decision_vars = self.problem.denormalize_decision(norm_decision_vars, params)
+        #decision_vars = self.problem.denormalize_decision(norm_decision_vars, params_dict)
         
         # Compute KKT-based loss
         stationarity_loss, feasibility_loss, complementarity_loss = self.kkt_loss(decision_vars, dual_eq_vars, dual_ineq_vars, params)
-        loss = stationarity_loss + feasibility_loss + complementarity_loss
+        loss = (stationarity_loss + feasibility_loss + complementarity_loss).mean()
         
         # Backpropagation with gradient clipping
         self.optimizer.zero_grad()
@@ -632,7 +617,7 @@ class KKT_NN:
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optimizer.step()
         
-        return loss.item()
+        return loss.item(), stationarity_loss.mean().item(), feasibility_loss.mean().item(), 0*complementarity_loss.mean().item()
 
     def validation_step(self, validation_loader):
         """
@@ -655,13 +640,13 @@ class KKT_NN:
                 solutions = solutions.to(self.device)
                 
                 # Denormalize parameters
-                params = self.problem.denormalize_parameters(params_norm)
+                params, params_dict = self.problem.denormalize_parameters(params_norm)
                 
                 # Forward pass through the model
                 norm_decision_vars, dual_eq_vars, dual_ineq_vars = self.model(params_norm)
                 
                 # Denormalize decision variables
-                decision_vars = self.problem.denormalize_decision(norm_decision_vars, params)
+                decision_vars = self.problem.denormalize_decision(norm_decision_vars, params_dict)
                 
                 
                 
@@ -709,7 +694,7 @@ class KKT_NN:
         """
         for step in tqdm(range(1, num_steps + 1)):
             # Perform a training step
-            train_loss = self.training_step(batch_size)
+            train_loss, stationarity_loss, feasibility_loss, complementarity_loss = self.training_step(batch_size)
             self.metrics['train_loss'].append(train_loss)
             self.tb_logger.add_scalar("Train/Loss", train_loss, step)
             
@@ -724,7 +709,7 @@ class KKT_NN:
                 self.tb_logger.add_scalar("Val/MAPE", mape, step)
                 self.tb_logger.add_scalar("Val/RMSE", rmse, step)
                 
-                print(f"Step {step}: Train Loss={train_loss:.6f}, R2={r2:.4f}, MAPE={mape:.4f}, RMSE={rmse:.6f}")
+                print(f"Step {step}: Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}, Val R2={r2:.4f}, MAPE={mape:.4f}, RMSE={rmse:.6f}")
                 
                 # Update the learning rate scheduler
                 self.scheduler.step(train_loss)
