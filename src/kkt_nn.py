@@ -83,9 +83,9 @@ class Constraint:
         """
         expr = self.expr_func(decision_vars, params)
         if isinstance(expr, list):
-            expr = torch.stack(expr, dim=1)  # Converti la lista in un tensor
+            expr = torch.stack(expr, dim=-1)  # Converti la lista in un tensor
         elif isinstance(expr, torch.Tensor):
-            pass  # Assumi che la forma sia corretta
+            expr = expr.reshape(-1)  # Assumi che la forma sia corretta
         else:
             raise TypeError("expr_func deve restituire un torch.Tensor o una lista di torch.Tensor")
 
@@ -93,10 +93,6 @@ class Constraint:
             # Inferisci il numero di vincoli basandosi sulla dimensione dell'espressione
             self.n_constraints = expr.shape[-1]
         return expr
-        """ if self.type == 'equality':
-            return expr  # Must be equal to zero
-        elif self.type == 'inequality':
-            return torch.relu(expr)  # For constraints <= 0, apply ReLU to ensure non-negativity """
 
 class OptimizationProblem:
     def __init__(self, parameters, decision_variables, cost_function, constraints):
@@ -121,16 +117,16 @@ class OptimizationProblem:
         Returns:
             tuple: (num_eq_constraints, num_ineq_constraints)
         """
-        num_eq = 0
-        num_ineq = 0
+        num_eq = []
+        num_ineq = []
         dummy_batch = torch.zeros(len(self.parameters))  # Batch fittizio per inferire i vincoli
 
         for constraint in self.constraints:
             expr = constraint.get_constraints(torch.zeros(len(self.decision_variables)), dummy_batch)
             if constraint.type == 'equality':
-                num_eq += expr.shape[-1]
+                num_eq.append(expr.shape[-1])
             elif constraint.type == 'inequality':
-                num_ineq += expr.shape[-1]
+                num_ineq.append(expr.shape[-1])
         return num_eq, num_ineq
     def denormalize_parameters(self, norm_params):
         """
@@ -149,6 +145,8 @@ class OptimizationProblem:
             denorm = 0.5 * (norm_params[:, i] + 1.0) * (denorm_max - denorm_min) + denorm_min
             denorm_params[var.name] = denorm
         return torch.stack([denorm_params[var.name] for var in self.parameters], dim=1), denorm_params
+    
+    
     def denormalize_decision(self, norm_decisions, denorm_params):
         """
         Denormalizza le variabili decisionali da [-1, 1] alla loro scala originale.
@@ -335,88 +333,9 @@ class ValidationDataset(Dataset):
             solution = self.transform(solution)
         return torch.tensor(params), torch.tensor(solution)
 
-def kkt_loss(problem, decision_vars, dual_eq_vars, dual_ineq_vars, parameters):
-    """
-    Computes the loss based on KKT conditions.
-    
-    Args:
-        problem (OptimizationProblem): Instance of the optimization problem.
-        decision_vars (torch.Tensor): Decision variables.
-        dual_eq_vars (torch.Tensor): Dual variables for equality constraints.
-        dual_ineq_vars (torch.Tensor): Dual variables for inequality constraints.
-        parameters (torch.Tensor): Parameters of the problem.
-    
-    Returns:
-        tuple: (stationarity_loss, feasibility_loss, complementarity_loss)
-    """
-    # Enable gradient computation for decision variables
-    cost = problem.cost_function(decision_vars, parameters)
-    
-    def lagrangian_single(decision_var, dual_eq, dual_ineq, param):
-        """
-        Calcola il Lagrangiano per un singolo campione.
-
-        Args:
-            decision_var (torch.Tensor): Variabile decisionale denormalizzata, forma (num_decision_vars,).
-            dual_eq (torch.Tensor or None): Variabili duali per vincoli di uguaglianza, forma (num_eq_constraints,).
-            dual_ineq (torch.Tensor or None): Variabili duali per vincoli di disuguaglianza, forma (num_ineq_constraints,).
-            param (torch.Tensor): Parametri denormalizzati, forma (num_parameters,).
-
-        Returns:
-            torch.Tensor: Valore scalare del Lagrangiano.
-        """
-        # Calcola il costo
-        cost = self.problem.cost_function.compute_pytorch(decision_var.unsqueeze(0))  # Assicurati che cost_function abbia un metodo compute_pytorch
-        lagrangian = cost.squeeze(0)  # Scalar
-
-        # Aggiungi i termini duali per i vincoli di uguaglianza
-        if dual_eq is not None:
-            for i in range(self.num_eq_constraints):
-                expr = self.problem.constraints[i].get_constraints(decision_var.unsqueeze(0), param.unsqueeze(0)).squeeze(0)[i]
-                lagrangian += dual_eq[i] * expr
-
-    # Gestisci i vincoli di disuguaglianza
-    if dual_ineq_vars is not None:
-        ineq_constraint_idx = 0
-        for constraint in problem.constraints:
-            if constraint.type == 'inequality':
-                expr = constraint.get_constraints(decision_vars, parameters)  # (batch_size, n_constraints)
-                dual = dual_ineq_vars[:, ineq_constraint_idx:ineq_constraint_idx + constraint.n_constraints]  # (batch_size, n_constraints)
-                lagrangian += (dual * expr).sum(dim=1)  # Somma sui vincoli
-                ineq_constraint_idx += constraint.n_constraints
-    
-    grad_L = torch.autograd.grad(lagrangian, decision_vars, retain_graph=True, create_graph=True)[0]
-    grad_L = vmap(grad(self.lagrangian, argnums=3), in_dims=(0, 0, 0, 0, 0))(
-            actions_unnormed, G, h, sol_unnormed,lambda_
-        )
-    stationarity_loss = torch.mean(torch.sum(grad_L**2, dim=1))
-    
-    feasibility_loss = 0.0
-    for constraint in problem.constraints:
-        expr = constraint.get_constraints(decision_vars, parameters)
-        if constraint.type == 'equality':
-            feasibility_loss += torch.mean(expr**2)
-        elif constraint.type == 'inequality':
-            feasibility_loss += torch.mean(torch.relu(expr)**2)
-    
-    complementarity_loss = 0.0
-    if dual_ineq_vars is not None:
-        ineq_constraint_idx = 0
-        for constraint in problem.constraints:
-            if constraint.type == 'inequality':
-                expr = constraint.get_constraints(decision_vars, parameters)  # (batch_size, n_constraints)
-                dual = dual_ineq_vars[:, ineq_constraint_idx:ineq_constraint_idx + constraint.n_constraints]  # (batch_size, n_constraints)
-                # Complementarity: dual * expr = 0
-                complementarity = dual * expr  # (batch_size, n_constraints)
-                complementarity_loss += torch.mean(complementarity**2)
-                ineq_constraint_idx += constraint.n_constraints
-    
-    return stationarity_loss, feasibility_loss, complementarity_loss
-
-
 class KKT_NN:
     def __init__(self, problem, validation_filepath, 
-                 learning_rate=1e-5, patience=1000, device=None):
+                 learning_rate=3e-4, patience=1000, device=None):
         """
         Initializes the KKT-based neural network model, optimizer, scheduler, early stopper, and logging.
         
@@ -433,13 +352,13 @@ class KKT_NN:
         # Input dimension: number of parameters
         self.input_dim = len(problem.parameters)
         # Number of equality and inequality constraints
-        self.num_eq_constraints = sum(1 for c in problem.constraints if c.type == 'equality')
-        self.num_ineq_constraints = sum(1 for c in problem.constraints if c.type == 'inequality')
+        self.num_eq_constraints = self.problem.num_eq_constraints
+        self.num_ineq_constraints = self.problem.num_ineq_constraints
         # Number of decision variables
         self.num_decision_vars = len(problem.decision_variables)
         
         # Initialize the neural network model
-        self.model = KKTNN(self.input_dim, self.num_eq_constraints, self.num_ineq_constraints, self.num_decision_vars).to(self.device)
+        self.model = KKTNN(self.input_dim, sum(self.num_eq_constraints), sum(self.num_ineq_constraints), self.num_decision_vars).to(self.device)
         # Initialize the optimizer with weight decay for regularization
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         # Initialize the learning rate scheduler
@@ -462,16 +381,6 @@ class KKT_NN:
         
         # Initialize Sobol engine for parameter sampling
         self.sobol_eng = torch.quasirandom.SobolEngine(dimension=self.input_dim, scramble=True, seed=42)
-    
-    def generate_validation_dataset(self, num_samples=1000, solver=cp.ECOS):
-        """
-        Generates a validation dataset using CVXPY and saves it to a pickle file.
-        
-        Args:
-            num_samples (int, optional): Number of samples to generate. Defaults to 1000.
-            solver (cvxpy Solver, optional): Solver to use with CVXPY. Defaults to cp.ECOS.
-        """
-        generate_validation_dataset_cvxpy(self.problem, num_samples=num_samples, solver=solver)
     
     def load_validation_dataset(self, filepath, batch_size=512):
         """
@@ -508,15 +417,13 @@ class KKT_NN:
 
             # Aggiungi i termini duali per i vincoli di uguaglianza
             if dual_eq is not None:
-                for i in range(self.num_eq_constraints):
-                    expr = self.problem.constraints[i].get_constraints(decision_var, param)[..., i]
-                    lagrangian += dual_eq[..., i] * expr
+                expr = torch.cat([constraint.get_constraints(decision_var, param) for constraint in self.problem.constraints[:len(self.num_eq_constraints)]], -1)
+                lagrangian += torch.einsum('...i,...i->...', dual_eq, expr)
 
             # Aggiungi i termini duali per i vincoli di disuguaglianza
             if dual_ineq is not None:
-                for i in range(self.num_ineq_constraints):
-                    expr = self.problem.constraints[self.num_eq_constraints + i].get_constraints(decision_var, param)[..., i]
-                    lagrangian += dual_ineq[..., i] * expr
+                expr = torch.cat([constraint.get_constraints(decision_var, param) for constraint in self.problem.constraints[len(self.num_eq_constraints):]], -1)
+                lagrangian += torch.einsum('...i,...i->...', dual_ineq, expr)
 
             return lagrangian
     def kkt_loss(self, decision_vars, dual_eq_vars, dual_ineq_vars, parameters):
@@ -535,14 +442,14 @@ class KKT_NN:
         batch_size = decision_vars.shape[0]
 
         # Se dual_eq_vars è None, sostituiscilo con un tensore di zeri
-        if dual_eq_vars is None and self.num_eq_constraints > 0:
-            dual_eq_vars = torch.zeros((batch_size, self.num_eq_constraints), device=self.device)
+        if dual_eq_vars is None and sum(self.num_eq_constraints) > 0:
+            dual_eq_vars = torch.zeros((batch_size, sum(self.num_eq_constraints)), device=self.device)
         elif self.num_eq_constraints == 0:
             dual_eq_vars = None  # Nessun vincolo di uguaglianza
 
         # Se dual_ineq_vars è None, sostituiscilo con un tensore di zeri
-        if dual_ineq_vars is None and self.num_ineq_constraints > 0:
-            dual_ineq_vars = torch.zeros((batch_size, self.num_ineq_constraints), device=self.device)
+        if dual_ineq_vars is None and sum(self.num_ineq_constraints) > 0:
+            dual_ineq_vars = torch.zeros((batch_size, sum(self.num_ineq_constraints)), device=self.device)
         elif self.num_ineq_constraints == 0:
             dual_ineq_vars = None  # Nessun vincolo di disuguaglianza
 
@@ -575,10 +482,8 @@ class KKT_NN:
         # Calcola la perdita di complementarietà: somma dei quadrati del prodotto dual * vincolo
         complementarity_loss = 0.0
         if dual_ineq_vars is not None:
-            for i in range(self.num_ineq_constraints):
-                expr = self.problem.constraints[self.num_eq_constraints + i].get_constraints(decision_vars, parameters)[:, i]  # Forma: (batch_size,)
-                dual = dual_ineq_vars[:, i]  # Forma: (batch_size,)
-                complementarity = dual * expr  # Forma: (batch_size,)
+                expr = torch.cat([constraint.get_constraints(decision_vars, parameters) for constraint in self.problem.constraints[len(self.num_eq_constraints):]], -1)
+                complementarity = dual_ineq_vars * expr  # Forma: (batch_size,)
                 complementarity_loss += torch.square(complementarity).sum(-1)
 
         return loss_stationarity, feasibility_loss, complementarity_loss
@@ -614,10 +519,10 @@ class KKT_NN:
         # Backpropagation with gradient clipping
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        #torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optimizer.step()
         
-        return loss.item(), stationarity_loss.mean().item(), feasibility_loss.mean().item(), 0*complementarity_loss.mean().item()
+        return loss.item(), stationarity_loss.mean().item(), feasibility_loss.mean().item(), complementarity_loss.mean().item()
 
     def validation_step(self, validation_loader):
         """
@@ -635,18 +540,18 @@ class KKT_NN:
         mapes = []
         rmses = []
         with torch.no_grad():
-            for params_norm, solutions in validation_loader:
-                params_norm = params_norm.to(self.device)
+            for params, solutions in validation_loader:
+                params = params.to(self.device)
                 solutions = solutions.to(self.device)
                 
                 # Denormalize parameters
-                params, params_dict = self.problem.denormalize_parameters(params_norm)
+                #params_norm, params_dict = self.problem.normalize_parameters(params)
                 
                 # Forward pass through the model
-                norm_decision_vars, dual_eq_vars, dual_ineq_vars = self.model(params_norm)
+                decision_vars, dual_eq_vars, dual_ineq_vars = self.model(params)
                 
                 # Denormalize decision variables
-                decision_vars = self.problem.denormalize_decision(norm_decision_vars, params_dict)
+                #decision_vars = self.problem.denormalize_decision(norm_decision_vars, params_dict)
                 
                 
                 
@@ -699,7 +604,7 @@ class KKT_NN:
             self.tb_logger.add_scalar("Train/Loss", train_loss, step)
             
             # Perform validation periodically
-            if step % 100 == 0 or step == num_steps:
+            if step % 1 == 0 or step == num_steps:
                 r2, mape, rmse = self.validation_step(validation_loader)
                 self.metrics['r2'].append(r2)
                 self.metrics['mape'].append(mape)
@@ -845,68 +750,3 @@ class KKT_NN:
         self.es.counter = checkpoint['es_state']['counter']
         self.es.best = checkpoint['es_state']['best']
         self.model.to(self.device)
-
-def generate_validation_dataset_cvxpy(problem, num_samples=1000, solver=cp.ECOS):
-    """
-    Generates a validation dataset using CVXPY and saves it to a pickle file.
-    
-    Args:
-        problem (OptimizationProblem): Instance of the optimization problem.
-        num_samples (int, optional): Number of samples to generate. Defaults to 1000.
-        solver (cvxpy Solver, optional): Solver to use with CVXPY. Defaults to cp.ECOS.
-    """
-    sobol_eng = torch.quasirandom.SobolEngine(dimension=len(problem.parameters), scramble=True, seed=42)
-    norm_params = 2.0 * sobol_eng.draw(num_samples) - 1.0  # Normalize to [-1, 1]
-    params = problem.denormalize_parameters(norm_params).cpu().numpy()
-
-    dataset = []
-    for i in tqdm(range(num_samples), desc="Generating validation dataset"):
-        param = params[i]
-        
-        # Define decision variables as CVXPY Variables
-        num_decisions = len(problem.decision_variables)
-        decision_vars = cp.Variable(num_decisions)
-        
-        # Define the cost function using CVXPY
-        cost_expr = problem.cost_function(decision_vars, param)
-        
-        # Define constraints using CVXPY expressions directly
-        constraints_cvxpy = []
-        for constraint in problem.constraints:
-            if constraint.type == 'equality':
-                constraints_cvxpy.append(constraint.expr_func(decision_vars, param) == 0)
-            elif constraint.type == 'inequality':
-                constraints_cvxpy.append(constraint.expr_func(decision_vars, param) <= 0)
-        
-        # Define the optimization problem
-        prob = cp.Problem(cp.Minimize(cost_expr), constraints_cvxpy)
-        
-        # Solve the problem
-        try:
-            prob.solve(solver=solver)
-            if prob.status not in ["infeasible", "unbounded"]:
-                solution = decision_vars.value
-            else:
-                # If infeasible or unbounded, use a random solution within bounds
-                solution = np.random.uniform(
-                    low=[var.min_val if not callable(var.min_val) else var.get_min(torch.tensor(param, dtype=torch.float32).unsqueeze(0)).item() for var in problem.decision_variables],
-                    high=[var.max_val if not callable(var.max_val) else var.get_max(torch.tensor(param, dtype=torch.float32).unsqueeze(0)).item() for var in problem.decision_variables]
-                )
-        except Exception as e:
-            print(f"Error solving problem with parameters {param}: {e}")
-            # In case of error, use a random solution
-            solution = np.random.uniform(
-                low=[var.min_val if not callable(var.min_val) else var.get_min(torch.tensor(param, dtype=torch.float32).unsqueeze(0)).item() for var in problem.decision_variables],
-                high=[var.max_val if not callable(var.max_val) else var.get_max(torch.tensor(param, dtype=torch.float32).unsqueeze(0)).item() for var in problem.decision_variables]
-            )
-        
-        # Denormalize the solutions
-        solution_tensor = torch.tensor(solution, dtype=torch.float32)
-        denorm_solution = problem.denormalize_decision(solution_tensor.unsqueeze(0), torch.tensor(param, dtype=torch.float32).unsqueeze(0)).squeeze(0).numpy()
-        
-        # Append the normalized parameters and denormalized solutions to the dataset
-        dataset.append((norm_params[i].cpu().numpy(), denorm_solution))
-    
-    # Save the dataset to a pickle file
-    with open("validation_dataset_cvxpy.pkl", "wb") as f:
-        pickle.dump(dataset, f)
