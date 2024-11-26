@@ -1,5 +1,3 @@
-# kkt_framework.py
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -146,7 +144,32 @@ class OptimizationProblem:
             denorm_params[var.name] = denorm
         return torch.stack([denorm_params[var.name] for var in self.parameters], dim=1), denorm_params
     
-    
+    def normalize_parameters(self, params):
+        """
+        Normalizza i parametri dalla loro scala originale all'intervallo [-1, 1], considerando le dipendenze tra parametri.
+
+        Args:
+            params (torch.Tensor): Parametri non normalizzati di forma (batch_size, num_parameters).
+
+        Returns:
+            torch.Tensor: Parametri normalizzati di forma (batch_size, num_parameters).
+        """
+        norm_params = []
+        denorm_params = {}  # Dizionario per i parametri denormalizzati elaborati finora
+        for i, var in enumerate(self.parameters):
+            # Estrai il parametro denormalizzato corrente
+            denorm_param = params[:, i]
+            # Aggiungi il parametro denormalizzato al dizionario
+            denorm_params[var.name] = denorm_param
+            # Calcola i valori minimi e massimi denormalizzati considerando le dipendenze
+            denorm_min = var.get_min(denorm_params)
+            denorm_max = var.get_max(denorm_params)
+            # Normalizza il parametro corrente nell'intervallo [-1, 1]
+            norm = 2.0 * (denorm_param - denorm_min) / (denorm_max - denorm_min) - 1.0
+            norm_params.append(norm)
+        # Combina tutti i parametri normalizzati in un unico tensore
+        norm_params = torch.stack(norm_params, dim=1)
+        return norm_params
     def denormalize_decision(self, norm_decisions, denorm_params):
         """
         Denormalizza le variabili decisionali da [-1, 1] alla loro scala originale.
@@ -223,7 +246,8 @@ class KKTNN(nn.Module):
         self.decision_output = nn.Sequential(
             ResidualBlock(hidden_dim),
             ResidualBlock(hidden_dim),
-            nn.Linear(hidden_dim, num_decision_vars),  # Outputs between -1 and 1
+            nn.Linear(hidden_dim, num_decision_vars),
+            nn.Tanh(),  # Outputs between -1 and 1
         )
         
         # Conditionally create outputs for dual variables
@@ -362,7 +386,7 @@ class KKT_NN:
         # Initialize the optimizer with weight decay for regularization
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         # Initialize the learning rate scheduler
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=patience, factor=0.1, verbose=True)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=100, factor=0.1, verbose=True)
         # Initialize the early stopper
         self.es = EarlyStopper(patience=patience, min_delta=1e-4, mode='min')  # Based on minimum validation loss
         
@@ -507,10 +531,10 @@ class KKT_NN:
         
         params, params_dict = self.problem.denormalize_parameters(norm_params)
         # Forward pass through the model
-        decision_vars, dual_eq_vars, dual_ineq_vars = self.model(norm_params)
+        norm_decision_vars, dual_eq_vars, dual_ineq_vars = self.model(norm_params)
         
         # Denormalize decision variables
-        #decision_vars = self.problem.denormalize_decision(norm_decision_vars, params_dict)
+        decision_vars = self.problem.denormalize_decision(norm_decision_vars, params_dict)
         
         # Compute KKT-based loss
         stationarity_loss, feasibility_loss, complementarity_loss = self.kkt_loss(decision_vars, dual_eq_vars, dual_ineq_vars, params)
@@ -543,15 +567,17 @@ class KKT_NN:
             for params, solutions in validation_loader:
                 params = params.to(self.device)
                 solutions = solutions.to(self.device)
-                
+                params_dict = {}
+                for i, var in enumerate(self.problem.parameters):  # Itera direttamente su self.parameters
+                    params_dict[var.name] = params[:, i]
                 # Denormalize parameters
-                #params_norm, params_dict = self.problem.normalize_parameters(params)
+                params_norm = self.problem.normalize_parameters(params)
                 
                 # Forward pass through the model
-                decision_vars, dual_eq_vars, dual_ineq_vars = self.model(params)
+                norm_decision_vars, dual_eq_vars, dual_ineq_vars = self.model(params_norm)
                 
                 # Denormalize decision variables
-                #decision_vars = self.problem.denormalize_decision(norm_decision_vars, params_dict)
+                decision_vars = self.problem.denormalize_decision(norm_decision_vars, params_dict)
                 
                 
                 

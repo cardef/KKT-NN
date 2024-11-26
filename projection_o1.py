@@ -111,7 +111,7 @@ def main():
     )
 
     # Train the Model
-    num_steps = 2  # Total number of training steps
+    num_steps = 10000  # Total number of training steps
     batch_size = 1000  # Batch size for training
     print("Starting training...")
     model.train_model(
