@@ -12,7 +12,8 @@ import pandas as pd
 import pickle
 import os
 import cvxpy as cp
-
+from torchjd import backward
+from torchjd.aggregation import UPGrad
 # Set random seeds for reproducibility
 torch.manual_seed(42)
 torch.cuda.manual_seed_all(42)
@@ -287,7 +288,7 @@ class KKTNN(nn.Module):
         return decision, dual_eq, dual_ineq
 
 class EarlyStopper:
-    def __init__(self, patience=1000, min_delta=1e-4, mode='min'):
+    def __init__(self, patience=1000, min_delta=0.0, mode='min'):
         """
         Manages early stopping based on metric improvements.
         
@@ -386,9 +387,9 @@ class KKT_NN:
         # Initialize the optimizer with weight decay for regularization
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         # Initialize the learning rate scheduler
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=100, factor=0.1, verbose=True)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=500, factor=0.1)
         # Initialize the early stopper
-        self.es = EarlyStopper(patience=patience, min_delta=1e-4, mode='min')  # Based on minimum validation loss
+        self.es = EarlyStopper(patience=patience, min_delta=0.0, mode='min')  # Based on minimum validation loss
         
         # Initialize TensorBoard logger
         current_time = datetime.now().strftime("%b%d_%H-%M-%S")
@@ -396,16 +397,19 @@ class KKT_NN:
         
         # Initialize metrics dictionary
         self.metrics = {
-            'train_loss': [],
-            'val_loss': [],
             'r2': [],
             'mape': [],
             'rmse': []
         }
         
+        self.losses = {
+            'stationarity': [],
+            'feasibility': [],
+            'complementarity': []
+        }
         # Initialize Sobol engine for parameter sampling
         self.sobol_eng = torch.quasirandom.SobolEngine(dimension=self.input_dim, scramble=True, seed=42)
-    
+        self.validation_loader = self.load_validation_dataset(validation_filepath)
     def load_validation_dataset(self, filepath, batch_size=512):
         """
         Loads the validation dataset from a pickle file and returns a DataLoader.
@@ -540,12 +544,14 @@ class KKT_NN:
         stationarity_loss, feasibility_loss, complementarity_loss = self.kkt_loss(decision_vars, dual_eq_vars, dual_ineq_vars, params)
         loss = (stationarity_loss + feasibility_loss + complementarity_loss).mean()
         
-        # Backpropagation with gradient clipping
+        
         self.optimizer.zero_grad()
         loss.backward()
+            
+        #backward([stationarity_loss, feasibility_loss, complementarity_loss], self.model.parameters(), A=UPGrad())
         #torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-        self.optimizer.step()
         
+        self.optimizer.step()
         return loss.item(), stationarity_loss.mean().item(), feasibility_loss.mean().item(), complementarity_loss.mean().item()
 
     def validation_step(self, validation_loader):
@@ -613,7 +619,7 @@ class KKT_NN:
             norm_params = 2.0 * samples - 1.0
             return norm_params
 
-    def train_model(self, num_steps, batch_size, validation_loader, checkpoint_interval=1000):
+    def train_model(self, num_steps, batch_size, checkpoint_interval=1000):
         """
         Initiates the training process.
         
@@ -626,12 +632,20 @@ class KKT_NN:
         for step in tqdm(range(1, num_steps + 1)):
             # Perform a training step
             train_loss, stationarity_loss, feasibility_loss, complementarity_loss = self.training_step(batch_size)
-            self.metrics['train_loss'].append(train_loss)
             self.tb_logger.add_scalar("Train/Loss", train_loss, step)
+            self.losses['stationarity'].append(stationarity_loss)
+            self.losses['feasibility'].append(feasibility_loss)
+            self.losses['complementarity'].append(complementarity_loss)
+            self.scheduler.step(train_loss)
+                
+            # Check for early stopping
+            if self.es.early_stop_triggered(train_loss):
+                print("Early stopping triggered")
+                break
             
             # Perform validation periodically
-            if step % 1 == 0 or step == num_steps:
-                r2, mape, rmse = self.validation_step(validation_loader)
+            if step % 100 == 0 or step == num_steps:
+                r2, mape, rmse = self.validation_step(self.validation_loader)
                 self.metrics['r2'].append(r2)
                 self.metrics['mape'].append(mape)
                 self.metrics['rmse'].append(rmse)
@@ -640,16 +654,10 @@ class KKT_NN:
                 self.tb_logger.add_scalar("Val/MAPE", mape, step)
                 self.tb_logger.add_scalar("Val/RMSE", rmse, step)
                 
-                print(f"Step {step}: Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}, Val R2={r2:.4f}, MAPE={mape:.4f}, RMSE={rmse:.6f}")
+                print(f"Step={step}  LR={self.scheduler.get_last_lr()[0]} Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}, Val R2={r2:.4f}, MAPE={mape:.4f}, RMSE={rmse:.6f}")
                 
                 # Update the learning rate scheduler
-                self.scheduler.step(train_loss)
                 
-                # Check for early stopping
-                if self.es.early_stop_triggered(train_loss):
-                    print("Early stopping triggered")
-                    break
-            
             # Save checkpoints at specified intervals
             if step % checkpoint_interval == 0:
                 self.save_checkpoint(step)
@@ -705,17 +713,15 @@ class KKT_NN:
             filepath (str): Path to save the metrics CSV.
         """
         pd.DataFrame(self.metrics).to_csv(filepath, index=False)
-
-    def load_metrics(self, filepath):
+        
+    def save_losses(self, filepath):
         """
-        Loads training and validation metrics from a CSV file.
+        Saves the training and validation metrics to a CSV file.
         
         Args:
-            filepath (str): Path from which to load the metrics CSV.
+            filepath (str): Path to save the metrics CSV.
         """
-        df = pd.read_csv(filepath)
-        for column in df.columns:
-            self.metrics[column] = df[column].tolist()
+        pd.DataFrame(self.losses).to_csv(filepath, index=False)
 
     def predict(self, input_params):
         """

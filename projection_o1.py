@@ -101,26 +101,21 @@ def main():
     validation_filepath = "projection.pkl"  # Change the name if preferred
 
     # Initialize the KKT Neural Network Model
-    model = KKT_NN(problem=problem, validation_filepath=validation_filepath, learning_rate=3e-4)
+    model = KKT_NN(problem=problem, validation_filepath=validation_filepath, learning_rate=3e-4, patience=10000)
 
-    # Generate the Validation Dataset if it does not exist
-
-    # Load the Validation Dataset
-    validation_loader = model.load_validation_dataset(
-        filepath=validation_filepath, batch_size=512
-    )
 
     # Train the Model
-    num_steps = 10000  # Total number of training steps
-    batch_size = 1000  # Batch size for training
+    num_steps = 3  # Total number of training steps
+    batch_size = 512  # Batch size for training
     print("Starting training...")
     model.train_model(
-        num_steps=num_steps, batch_size=batch_size, validation_loader=validation_loader
+        num_steps=num_steps, batch_size=batch_size, 
     )
 
     # Save the Trained Model and Metrics
     model.save_model("kkt_nn_model_cvxpy.pth")
     model.save_metrics("training_metrics_cvxpy.csv")
+    model.save_losses("losses.csv")
     print("Model and metrics saved.")
 
     # Load the Trained Model for Prediction
