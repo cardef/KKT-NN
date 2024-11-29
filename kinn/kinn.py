@@ -278,7 +278,7 @@ class KINN:
         )
 
         # Compute stationarity loss: sum of squares of gradients
-        loss_stationarity = torch.square(grad_L).sum(1)
+        loss_stationarity = torch.square(grad_L).mean(1)
 
         # Compute feasibility loss: sum of squares of constraint violations
         feasibility_loss = 0.0
@@ -287,9 +287,9 @@ class KINN:
                 decision_vars, params_dict
             )  # Shape: (batch_size, n_constraints)
             if constraint.type == "equality":
-                feasibility_loss += torch.square(expr).sum(-1)
+                feasibility_loss += torch.square(expr).mean(-1)
             elif constraint.type == "inequality":
-                feasibility_loss += torch.square(torch.relu(expr)).sum(-1)
+                feasibility_loss += torch.square(torch.relu(expr)).mean(-1)
 
         # Compute complementarity loss: sum of squares of dual * constraint expressions
         complementarity_loss = 0.0
@@ -305,7 +305,7 @@ class KINN:
                 complementarity = (
                     dual_ineq_vars * expr_ineq
                 )  # Shape: (batch_size, num_ineq_constraints)
-                complementarity_loss += torch.square(complementarity).sum(-1)
+                complementarity_loss += torch.square(complementarity).mean(-1)
 
         return loss_stationarity, feasibility_loss, complementarity_loss
 

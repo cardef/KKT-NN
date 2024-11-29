@@ -90,7 +90,7 @@ model.train_model(
 )
 
 
-model.save_model("kkt_nn_projection.pth")
-model.save_metrics("projection_metrics.csv")
-model.save_losses("projection_losses.csv")
+model.save_model("Projection/kkt_nn_projection.pth")
+model.save_metrics("Projection/projection_metrics.csv")
+model.save_losses("Projection/projection_losses.csv")
 print("Model and metrics saved.")
