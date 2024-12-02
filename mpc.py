@@ -72,15 +72,14 @@ validation_filepath = "MPC/mpc.pkl"
 model = KINN(
     problem=problem,
     validation_filepath=validation_filepath,
-    num_residual_block=4,
-    hidden_dim=256,
+    num_embedding_residual_block=4,
+    num_outputs_residual_block=1,
+    hidden_dim=512,
     learning_rate=3e-4,
-    early_stop_patience=5000,
+    early_stop_patience=1000,
     scheduler_patience=500,
-    device=torch.device("mps"),
+    device=torch.device("cpu"),
 )
-
-print(model.problem.num_ineq_constraints)
 
 
 num_steps = 100000

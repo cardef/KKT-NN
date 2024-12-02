@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.func import grad, vmap
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchmetrics import R2Score, MeanAbsolutePercentageError, MeanSquaredError
+from torchmetrics import R2Score, MeanAbsolutePercentageError, MeanSquaredError, MeanAbsoluteError
 from datetime import datetime
 from tqdm import tqdm
 import numpy as np
@@ -105,7 +105,8 @@ class KINN:
         problem,
         validation_filepath = None,
         hidden_dim=512,
-        num_residual_block=4,
+        num_embedding_residual_block=4,
+        num_outputs_residual_block=4,
         learning_rate=3e-4,
         early_stop_patience=1000,
         early_stop_delta=0.0,
@@ -144,7 +145,8 @@ class KINN:
             num_ineq_constraints=self.num_ineq_constraints,
             num_decision_vars=self.num_decision_vars,
             hidden_dim=hidden_dim,
-            num_residual_blocks=num_residual_block
+            num_embedding_residual_blocks=num_embedding_residual_block,
+            num_outputs_residual_blocks=num_outputs_residual_block,
         ).to(self.device)
         # Initialize the optimizer with weight decay for regularization
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
@@ -162,7 +164,7 @@ class KINN:
         self.tb_logger = SummaryWriter("runs/kkt_nn/" + current_time)
 
         # Initialize metrics dictionary
-        self.metrics = {"r2": [], "mape": [], "rmse": []}
+        self.metrics = {"r2": [], "mape": [], "rmse": [], "mae": []}
 
         self.losses = {"stationarity": [], "feasibility": [], "complementarity": []}
         # Initialize Sobol engine for parameter sampling
@@ -309,6 +311,12 @@ class KINN:
                     )
             if expr_ineq:
                 expr_ineq = torch.cat(expr_ineq, dim=-1)
+
+                 # Define a small tolerance epsilon
+                epsilon = 1e-6
+                # Create masks
+                active_constraints = torch.abs(expr_ineq) >= -epsilon
+                inactive_constraints = torch.abs(expr_ineq) < -epsilon
                 complementarity = (
                     dual_ineq_vars * expr_ineq
                 )  # Shape: (batch_size, num_ineq_constraints)
@@ -376,6 +384,7 @@ class KINN:
         r2_scores = []
         mapes = []
         rmses = []
+        maes = []
         with torch.no_grad():
             for params, solutions in validation_loader:
                 params = params.to(self.device)
@@ -398,24 +407,25 @@ class KINN:
                 )
 
                 # Compute metrics
-                r2 = R2Score(self.num_decision_vars).to(self.device)(decision_vars, solutions)
+                r2 = R2Score(self.num_decision_vars, multioutput="variance_weighted").to(self.device)(decision_vars, solutions)
                 mape = MeanAbsolutePercentageError().to(self.device)(
                     decision_vars, solutions
                 )
                 rmse = MeanSquaredError(squared=False).to(self.device)(
                     decision_vars, solutions
                 )
-
+                mae = MeanAbsoluteError().to(self.device)(decision_vars, solutions)
                 r2_scores.append(r2.item())
                 mapes.append(mape.item())
                 rmses.append(rmse.item())
+                maes.append(mae.item())
 
         # Calculate average metrics
         avg_r2 = np.mean(r2_scores)
         avg_mape = np.mean(mapes)
         avg_rmse = np.mean(rmses)
-
-        return avg_r2, avg_mape, avg_rmse
+        avg_mae = np.mean(maes)
+        return avg_r2, avg_mape, avg_rmse, avg_mae
 
     def sample_parameters(self, batch_size):
         """
@@ -460,17 +470,17 @@ class KINN:
 
             # Perform validation periodically
             if self.validation_loader and (step % 100 == 0 or step == num_steps):
-                r2, mape, rmse = self.validation_step(self.validation_loader)
+                r2, mape, rmse, mae = self.validation_step(self.validation_loader)
                 self.metrics["r2"].append(r2)
                 self.metrics["mape"].append(mape)
                 self.metrics["rmse"].append(rmse)
-
+                self.metrics["mae"].append(mae)
                 self.tb_logger.add_scalar("Val/R2", r2, step)
                 self.tb_logger.add_scalar("Val/MAPE", mape, step)
                 self.tb_logger.add_scalar("Val/RMSE", rmse, step)
-
+                self.tb_logger.add_scalar("Val/MAE", mae, step)
                 print(
-                    f"Step={step}  LR={self.scheduler.optimizer.param_groups[0]['lr']} Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}, Val R2={r2:.4f}, MAPE={mape:.4f}, RMSE={rmse:.6f}"
+                    f"Step={step}  LR={self.scheduler.optimizer.param_groups[0]['lr']} Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}, Val R2={r2:.4f}, MAPE={mape:.4f}, RMSE={rmse:.6f}, , MAE={mae:.6f}"
                 )
 
             # Save checkpoints at specified intervals

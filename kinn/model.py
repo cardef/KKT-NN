@@ -44,7 +44,8 @@ class Net(nn.Module):
         num_ineq_constraints,
         num_decision_vars,
         hidden_dim=512,
-        num_residual_blocks=4,
+        num_embedding_residual_blocks=4,
+        num_outputs_residual_blocks=4,
     ):
         """
         Initializes the net.
@@ -59,36 +60,36 @@ class Net(nn.Module):
         """
         super(Net, self).__init__()
         layers = [nn.Linear(input_dim, hidden_dim), nn.LeakyReLU()]
-        for _ in range(num_residual_blocks):
+        for _ in range(num_embedding_residual_blocks):
             layers.append(ResidualBlock(hidden_dim))
         layers.append(nn.Linear(hidden_dim, hidden_dim))
         self.shared = nn.Sequential(*layers)
 
         # Output for decision variables
-        self.decision_output = nn.Sequential(
-            ResidualBlock(hidden_dim),
-            ResidualBlock(hidden_dim),
-            nn.Linear(hidden_dim, num_decision_vars),
-            nn.Tanh(),  # Outputs between -1 and 1
-        )
+        layers = []
+        for _ in range(num_outputs_residual_blocks):
+            layers.append(ResidualBlock(hidden_dim))
+        layers.append(nn.Linear(hidden_dim, num_decision_vars))
+        layers.append(nn.Tanh()) # Outputs between -1 and 1
+        self.decision_output = nn.Sequential(*layers)
 
         # Conditionally create outputs for dual variables
         if num_eq_constraints > 0:
-            self.dual_eq_output = nn.Sequential(
-                ResidualBlock(hidden_dim),
-                ResidualBlock(hidden_dim),
-                nn.Linear(hidden_dim, num_eq_constraints),
-            )
+            layers = []
+            for _ in range(num_outputs_residual_blocks):
+                layers.append(ResidualBlock(hidden_dim))
+            layers.append(nn.Linear(hidden_dim, num_eq_constraints))
+            self.dual_eq_output = nn.Sequential(*layers)
         else:
             self.dual_eq_output = None  # No equality constraints
 
         if num_ineq_constraints > 0:
-            self.dual_ineq_output = nn.Sequential(
-                ResidualBlock(hidden_dim),
-                ResidualBlock(hidden_dim),
-                nn.Linear(hidden_dim, num_ineq_constraints),
-                nn.Softplus(beta=5),  # Ensures outputs are non-negative
-            )
+            layers = []
+            for _ in range(num_outputs_residual_blocks):
+                layers.append(ResidualBlock(hidden_dim))
+            layers.append(nn.Linear(hidden_dim, num_ineq_constraints))
+            layers.append(nn.Softplus(beta=5)) # Ensures outputs are non-negative
+            self.dual_ineq_output = nn.Sequential(*layers)
         else:
             self.dual_ineq_output = None  # No inequality constraints
 
