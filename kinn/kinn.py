@@ -12,7 +12,8 @@ import pandas as pd
 import pickle
 import os
 from kinn.model import Net
-
+from torchjd import backward
+from torchjd.aggregation import UPGrad
 class ValidationDataset(Dataset):
     """
     Dataset class for loading validation data from a pickle file.
@@ -103,6 +104,8 @@ class KINN:
         self,
         problem,
         validation_filepath = None,
+        hidden_dim=512,
+        num_residual_block=4,
         learning_rate=3e-4,
         early_stop_patience=1000,
         early_stop_delta=0.0,
@@ -140,6 +143,8 @@ class KINN:
             num_eq_constraints=self.num_eq_constraints,
             num_ineq_constraints=self.num_ineq_constraints,
             num_decision_vars=self.num_decision_vars,
+            hidden_dim=hidden_dim,
+            num_residual_blocks=num_residual_block
         ).to(self.device)
         # Initialize the optimizer with weight decay for regularization
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
@@ -278,7 +283,7 @@ class KINN:
         )
 
         # Compute stationarity loss: sum of squares of gradients
-        loss_stationarity = torch.square(grad_L).mean(1)
+        loss_stationarity = torch.square(grad_L).mean(-1)
 
         # Compute feasibility loss: sum of squares of constraint violations
         feasibility_loss = 0.0
@@ -287,8 +292,10 @@ class KINN:
                 decision_vars, params_dict
             )  # Shape: (batch_size, n_constraints)
             if constraint.type == "equality":
+                
                 feasibility_loss += torch.square(expr).mean(-1)
             elif constraint.type == "inequality":
+                if expr.ndim < 2: print(expr.ndim)
                 feasibility_loss += torch.square(torch.relu(expr)).mean(-1)
 
         # Compute complementarity loss: sum of squares of dual * constraint expressions
@@ -343,9 +350,10 @@ class KINN:
         loss = (stationarity_loss + feasibility_loss + complementarity_loss).mean()
 
         self.optimizer.zero_grad()
+        #backward([stationarity_loss, feasibility_loss, complementarity_loss], self.model.parameters(), UPGrad())
         loss.backward()
         # Optionally clip gradients
-        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optimizer.step()
         return (
             loss.item(),
