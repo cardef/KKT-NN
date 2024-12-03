@@ -28,7 +28,7 @@ def cost_function(decision_variables, parameters):
         T_next = a * T_0 + b * decision_variables[..., t]
         cost_value += (T_next - T_ref).pow(2) + r * decision_variables[..., t].pow(2)
         T_0 = T_next
-    return cost_value / horizon
+    return cost_value/horizon
 
 
 def state_constraint(decision_variables, parameters):

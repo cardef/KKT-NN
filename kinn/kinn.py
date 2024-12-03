@@ -164,7 +164,7 @@ class KINN:
         self.tb_logger = SummaryWriter("runs/kkt_nn/" + current_time)
 
         # Initialize metrics dictionary
-        self.metrics = {"r2": [], "mape": [], "rmse": [], "mae": []}
+        self.metrics = {"optimality_gap": [], "equality_violation": [], "inequality_violation": []}
 
         self.losses = {"stationarity": [], "feasibility": [], "complementarity": []}
         # Initialize Sobol engine for parameter sampling
@@ -271,16 +271,22 @@ class KINN:
 
         # Determine the in_dims for vmap based on whether dual variables are None
         if dual_eq_vars is not None and dual_ineq_vars is not None:
-            in_dims = (0, 0, 0, 0)
+            in_dims = [0, 0, 0,]
         elif dual_eq_vars is None and dual_ineq_vars is not None:
-            in_dims = (0, None, 0, 0)
+            in_dims = [0, None, 0]
         elif dual_eq_vars is not None and dual_ineq_vars is None:
-            in_dims = (0, 0, None, 0)
+            in_dims = [0, 0, None]
         else:
-            in_dims = (0, None, None, 0)
+            in_dims = [0, None, None]
 
+        params_dims = {}
+
+        for param in params_dict:
+            params_dims[param] = 0
+
+        in_dims.append(params_dims)
         # Vectorize the gradient function of the Lagrangian
-        grad_L = vmap(grad(self.lagrangian, argnums=0), in_dims=in_dims)(
+        grad_L = vmap(grad(self.lagrangian, argnums=0), in_dims=tuple(in_dims))(
             decision_vars, dual_eq_vars, dual_ineq_vars, params_dict
         )
 
@@ -381,10 +387,9 @@ class KINN:
             tuple: (average R2 score, average MAPE, average RMSE)
         """
         self.model.eval()
-        r2_scores = []
-        mapes = []
-        rmses = []
-        maes = []
+        optimality_gaps = []
+        equality_violations = []
+        inequality_violations = []
         with torch.no_grad():
             for params, solutions in validation_loader:
                 params = params.to(self.device)
@@ -408,24 +413,41 @@ class KINN:
 
                 # Compute metrics
                 r2 = R2Score(self.num_decision_vars, multioutput="variance_weighted").to(self.device)(decision_vars, solutions)
+                
+                params_dims = {}
+
+                for param in params_dict:
+                    params_dims[param] = 0
+                optimal_cost = vmap(self.problem.cost_function, in_dims=(0, params_dims))(
+                    solutions, params_dict
+                )
+                predicted_cost = vmap(self.problem.cost_function, in_dims=(0, params_dims))(
+                    decision_vars, params_dict
+                )
                 mape = MeanAbsolutePercentageError().to(self.device)(
-                    decision_vars, solutions
+                    predicted_cost, optimal_cost
                 )
                 rmse = MeanSquaredError(squared=False).to(self.device)(
-                    decision_vars, solutions
+                    predicted_cost, optimal_cost
                 )
-                mae = MeanAbsoluteError().to(self.device)(decision_vars, solutions)
-                r2_scores.append(r2.item())
-                mapes.append(mape.item())
-                rmses.append(rmse.item())
-                maes.append(mae.item())
+                mae = MeanAbsoluteError().to(self.device)(predicted_cost, optimal_cost)
+                optimality_gap = ((predicted_cost - optimal_cost) / torch.clamp(torch.abs(optimal_cost), 1e-6) * 100).median().item()
+                
+                eps = torch.finfo(torch.float32).eps
+                for constraint in self.problem.constraints:
+                    expr = constraint.get_constraints(
+                        decision_vars, params_dict
+                    )  # Shape: (batch_size, n_constraints)
+                    if constraint.type == "equality":
+                        
+                        equality_violations.extend(torch.clamp(expr, min=eps).mean(-1).tolist())
+                    elif constraint.type == "inequality":
+                        inequality_violations.extend(torch.clamp(torch.relu(expr), min=eps).mean(-1).tolist())
+                
+                optimality_gaps.append(optimality_gap)
 
-        # Calculate average metrics
-        avg_r2 = np.mean(r2_scores)
-        avg_mape = np.mean(mapes)
-        avg_rmse = np.mean(rmses)
-        avg_mae = np.mean(maes)
-        return avg_r2, avg_mape, avg_rmse, avg_mae
+        
+        return optimality_gaps, equality_violations, inequality_violations
 
     def sample_parameters(self, batch_size):
         """
@@ -470,17 +492,16 @@ class KINN:
 
             # Perform validation periodically
             if self.validation_loader and (step % 100 == 0 or step == num_steps):
-                r2, mape, rmse, mae = self.validation_step(self.validation_loader)
-                self.metrics["r2"].append(r2)
-                self.metrics["mape"].append(mape)
-                self.metrics["rmse"].append(rmse)
-                self.metrics["mae"].append(mae)
-                self.tb_logger.add_scalar("Val/R2", r2, step)
-                self.tb_logger.add_scalar("Val/MAPE", mape, step)
-                self.tb_logger.add_scalar("Val/RMSE", rmse, step)
-                self.tb_logger.add_scalar("Val/MAE", mae, step)
+                optimality_gap, equality_violation, inequality_violation = self.validation_step(self.validation_loader)
+                self.metrics["optimality_gap"].extend(optimality_gap)
+                self.metrics["equality_violation"].append(equality_violation)
+                self.metrics["inequality_violation"].append(inequality_violation)
+                self.tb_logger.add_scalar("Val/Optimality Gap", np.median(optimality_gap), step)
+                self.tb_logger.add_scalar("Val/Equality Violation", np.median(equality_violation), step)
+                self.tb_logger.add_scalar("Val/Inequality Violation", np.median(inequality_violation), step)
+
                 print(
-                    f"Step={step}  LR={self.scheduler.optimizer.param_groups[0]['lr']} Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}, Val R2={r2:.4f}, MAPE={mape:.4f}, RMSE={rmse:.6f}, , MAE={mae:.6f}"
+                    f"Step={step}  LR={self.scheduler.optimizer.param_groups[0]['lr']} Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}, Val Optimality Gap={np.median(optimality_gap):.4f}, Equality violation={np.median(equality_violation):.4f}, Inequality violation={np.median(inequality_violation):.4f}"
                 )
 
             # Save checkpoints at specified intervals
@@ -527,7 +548,78 @@ class KINN:
         """
         self.model.load_state_dict(torch.load(filepath, map_location=self.device))
         self.model.to(self.device)
+    def test_model(self, validation_loader):
+        """
+        Performs a validation step over the entire validation dataset.
 
+        Args:
+            validation_loader (DataLoader): DataLoader for the validation dataset.
+
+        Returns:
+            tuple: (average R2 score, average MAPE, average RMSE)
+        """
+        self.model.eval()
+        optimality_gaps = []
+        equality_violations = []
+        inequality_violations = []
+        with torch.no_grad():
+            for params, solutions in validation_loader:
+                params = params.to(self.device)
+                solutions = solutions.to(self.device)
+                # Create params_dict
+                params_dict = {}
+                for i, var in enumerate(self.problem.parameters):
+                    params_dict[var.name] = params[:, i]
+                # Normalize parameters
+                params_norm = self.problem.normalize_parameters(params)
+
+                # Forward pass through the model
+                norm_decision_vars, dual_eq_vars, dual_ineq_vars = self.model(
+                    params_norm
+                )
+
+                # Denormalize decision variables
+                decision_vars = self.problem.denormalize_decision(
+                    norm_decision_vars, params_dict
+                )
+
+                # Compute metrics
+                r2 = R2Score(self.num_decision_vars, multioutput="variance_weighted").to(self.device)(decision_vars, solutions)
+                
+                params_dims = {}
+
+                for param in params_dict:
+                    params_dims[param] = 0
+                optimal_cost = vmap(self.problem.cost_function, in_dims=(0, params_dims))(
+                    solutions, params_dict
+                )
+                predicted_cost = vmap(self.problem.cost_function, in_dims=(0, params_dims))(
+                    decision_vars, params_dict
+                )
+                mape = MeanAbsolutePercentageError().to(self.device)(
+                    predicted_cost, optimal_cost
+                )
+                rmse = MeanSquaredError(squared=False).to(self.device)(
+                    predicted_cost, optimal_cost
+                )
+                mae = MeanAbsoluteError().to(self.device)(predicted_cost, optimal_cost)
+                optimality_gap = ((predicted_cost - optimal_cost) / torch.clamp(torch.abs(optimal_cost), 1e-6) * 100).tolist()
+                
+                eps = torch.finfo(torch.float32).eps
+                for constraint in self.problem.constraints:
+                    expr = constraint.get_constraints(
+                        decision_vars, params_dict
+                    )  # Shape: (batch_size, n_constraints)
+                    if constraint.type == "equality":
+                        
+                        equality_violations.extend(torch.clamp(expr, min=eps).mean(-1).tolist())
+                    elif constraint.type == "inequality":
+                        inequality_violations.extend(torch.clamp(torch.relu(expr), min=eps).mean(-1).tolist())
+                
+                optimality_gaps.extend(optimality_gap)
+
+        
+        return optimality_gaps, equality_violations, inequality_violations
     def save_metrics(self, filepath):
         """
         Saves the training and validation metrics to a CSV file.
