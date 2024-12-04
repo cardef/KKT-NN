@@ -85,13 +85,13 @@ model = KINN(
     problem=problem,
     validation_filepath=validation_filepath,
     learning_rate=3e-4,
-    early_stop_patience=1000,
-    scheduler_patience=800,
+    early_stop_patience=2000,
+    scheduler_patience=1000,
 )
 
 
-num_steps = 10000
-batch_size = 512
+num_steps = 3
+batch_size = 1024
 print("Starting training...")
 model.train_model(
     num_steps=num_steps,
@@ -100,6 +100,8 @@ model.train_model(
 
 
 model.save_model("Projection/kkt_nn_projection.pth")
+print(len(model.metrics['optimality_gap']))
+print(len(model.metrics['inequality_violation']))
 model.save_metrics("Projection/projection_metrics.csv")
 model.save_losses("Projection/projection_losses.csv")
 print("Model and metrics saved.")

@@ -71,16 +71,16 @@ model = KINN(
     problem=problem,
     validation_filepath=validation_filepath,
     num_embedding_residual_block=4,
-    num_outputs_residual_block=2,
+    num_outputs_residual_block=3,
     hidden_dim=512,
     learning_rate=3e-4,
-    early_stop_patience=5000,
-    scheduler_patience=500,
+    early_stop_patience=2000,
+    scheduler_patience=1000,
     device=torch.device("cpu"),
 )
 
 
-num_steps = 100000
+num_steps = 3
 batch_size = 1024
 print("Starting training...")
 model.train_model(

@@ -4,7 +4,12 @@ import torch.optim as optim
 from torch.func import grad, vmap
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchmetrics import R2Score, MeanAbsolutePercentageError, MeanSquaredError, MeanAbsoluteError
+from torchmetrics import (
+    R2Score,
+    MeanAbsolutePercentageError,
+    MeanSquaredError,
+    MeanAbsoluteError,
+)
 from datetime import datetime
 from tqdm import tqdm
 import numpy as np
@@ -14,6 +19,8 @@ import os
 from kinn.model import Net
 from torchjd import backward
 from torchjd.aggregation import UPGrad
+
+
 class ValidationDataset(Dataset):
     """
     Dataset class for loading validation data from a pickle file.
@@ -103,7 +110,7 @@ class KINN:
     def __init__(
         self,
         problem,
-        validation_filepath = None,
+        validation_filepath=None,
         hidden_dim=512,
         num_embedding_residual_block=4,
         num_outputs_residual_block=4,
@@ -164,7 +171,11 @@ class KINN:
         self.tb_logger = SummaryWriter("runs/kkt_nn/" + current_time)
 
         # Initialize metrics dictionary
-        self.metrics = {"optimality_gap": [], "equality_violation": [], "inequality_violation": []}
+        self.metrics = {
+            "optimality_gap": [],
+            "equality_violation": [],
+            "inequality_violation": [],
+        }
 
         self.losses = {"stationarity": [], "feasibility": [], "complementarity": []}
         # Initialize Sobol engine for parameter sampling
@@ -271,7 +282,11 @@ class KINN:
 
         # Determine the in_dims for vmap based on whether dual variables are None
         if dual_eq_vars is not None and dual_ineq_vars is not None:
-            in_dims = [0, 0, 0,]
+            in_dims = [
+                0,
+                0,
+                0,
+            ]
         elif dual_eq_vars is None and dual_ineq_vars is not None:
             in_dims = [0, None, 0]
         elif dual_eq_vars is not None and dual_ineq_vars is None:
@@ -300,10 +315,11 @@ class KINN:
                 decision_vars, params_dict
             )  # Shape: (batch_size, n_constraints)
             if constraint.type == "equality":
-                
+
                 feasibility_loss += torch.square(expr).mean(-1)
             elif constraint.type == "inequality":
-                if expr.ndim < 2: print(expr.ndim)
+                if expr.ndim < 2:
+                    print(expr.ndim)
                 feasibility_loss += torch.square(torch.relu(expr)).mean(-1)
 
         # Compute complementarity loss: sum of squares of dual * constraint expressions
@@ -318,7 +334,7 @@ class KINN:
             if expr_ineq:
                 expr_ineq = torch.cat(expr_ineq, dim=-1)
 
-                 # Define a small tolerance epsilon
+                # Define a small tolerance epsilon
                 epsilon = 1e-6
                 # Create masks
                 active_constraints = torch.abs(expr_ineq) >= -epsilon
@@ -364,7 +380,7 @@ class KINN:
         loss = (stationarity_loss + feasibility_loss + complementarity_loss).mean()
 
         self.optimizer.zero_grad()
-        #backward([stationarity_loss, feasibility_loss, complementarity_loss], self.model.parameters(), UPGrad())
+        # backward([stationarity_loss, feasibility_loss, complementarity_loss], self.model.parameters(), UPGrad())
         loss.backward()
         # Optionally clip gradients
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
@@ -412,18 +428,20 @@ class KINN:
                 )
 
                 # Compute metrics
-                r2 = R2Score(self.num_decision_vars, multioutput="variance_weighted").to(self.device)(decision_vars, solutions)
-                
+                r2 = R2Score(
+                    self.num_decision_vars, multioutput="variance_weighted"
+                ).to(self.device)(decision_vars, solutions)
+
                 params_dims = {}
 
                 for param in params_dict:
                     params_dims[param] = 0
-                optimal_cost = vmap(self.problem.cost_function, in_dims=(0, params_dims))(
-                    solutions, params_dict
-                )
-                predicted_cost = vmap(self.problem.cost_function, in_dims=(0, params_dims))(
-                    decision_vars, params_dict
-                )
+                optimal_cost = vmap(
+                    self.problem.cost_function, in_dims=(0, params_dims)
+                )(solutions, params_dict)
+                predicted_cost = vmap(
+                    self.problem.cost_function, in_dims=(0, params_dims)
+                )(decision_vars, params_dict)
                 mape = MeanAbsolutePercentageError().to(self.device)(
                     predicted_cost, optimal_cost
                 )
@@ -431,22 +449,38 @@ class KINN:
                     predicted_cost, optimal_cost
                 )
                 mae = MeanAbsoluteError().to(self.device)(predicted_cost, optimal_cost)
-                optimality_gap = ((predicted_cost - optimal_cost) / torch.clamp(torch.abs(optimal_cost), 1e-6) * 100).median().item()
-                
+
                 eps = torch.finfo(torch.float32).eps
+                optimality_gap = (
+                    (
+                        (predicted_cost - optimal_cost)
+                        / torch.clamp(torch.abs(optimal_cost), eps)
+                        * 100
+                    ).tolist()
+                )
+
                 for constraint in self.problem.constraints:
+                    equality_violations_=[]
+                    inequality_violations_ = []
                     expr = constraint.get_constraints(
                         decision_vars, params_dict
                     )  # Shape: (batch_size, n_constraints)
                     if constraint.type == "equality":
-                        
-                        equality_violations.extend(torch.clamp(expr, min=eps).mean(-1).tolist())
-                    elif constraint.type == "inequality":
-                        inequality_violations.extend(torch.clamp(torch.relu(expr), min=eps).mean(-1).tolist())
-                
-                optimality_gaps.append(optimality_gap)
 
-        
+                        equality_violations_.append(
+                            torch.clamp(expr, min=eps).mean(-1).tolist()
+                        )
+                    elif constraint.type == "inequality":
+                        inequality_violations_.append(
+                            torch.clamp(torch.relu(expr), min=eps).mean(-1).tolist()
+                        )
+
+                if len(equality_violations_) > 0: equality_violations_ = torch.tensor(equality_violations_).mean(-1).tolist()
+                if len(inequality_violations_) > 0: inequality_violations_ = torch.tensor(inequality_violations_).mean(-1).tolist()
+                equality_violations.extend((equality_violations_))
+                inequality_violations.extend((inequality_violations_))
+                optimality_gaps.extend(optimality_gap)
+
         return optimality_gaps, equality_violations, inequality_violations
 
     def sample_parameters(self, batch_size):
@@ -474,10 +508,14 @@ class KINN:
             batch_size (int): Size of each training batch.
             checkpoint_interval (int, optional): Interval of steps to save checkpoints. Defaults to None.
         """
-        for step in tqdm(range(1, num_steps + 1)):
+        pbar = tqdm(range(1, num_steps + 1))
+        for step in pbar:
             # Perform a training step
             train_loss, stationarity_loss, feasibility_loss, complementarity_loss = (
                 self.training_step(batch_size)
+            )
+            pbar.set_description(
+                f"Step={step}  LR={self.scheduler.optimizer.param_groups[0]['lr']} Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}"
             )
             self.tb_logger.add_scalar("Train/Loss", train_loss, step)
             self.losses["stationarity"].append(stationarity_loss)
@@ -488,22 +526,36 @@ class KINN:
             # Check for early stopping
             if self.es.early_stop_triggered(train_loss):
                 print("Early stopping triggered")
+                if self.validation_loader:
+                    optimality_gap, equality_violation, inequality_violation = (
+                        self.validation_step(self.validation_loader)
+                    )
+                    self.metrics["optimality_gap"].extend(optimality_gap)
+                    self.metrics["equality_violation"].extend(equality_violation)
+                    self.metrics["inequality_violation"].extend(inequality_violation)
+                    print(
+                        f"Optimality Gap={np.median(optimality_gap):.4f}, Equality violation={np.median(equality_violation):.4f}, Inequality violation={np.median(inequality_violation):.4f}"
+                    )
                 break
 
             # Perform validation periodically
-            if self.validation_loader and (step % 100 == 0 or step == num_steps):
-                optimality_gap, equality_violation, inequality_violation = self.validation_step(self.validation_loader)
+            if self.validation_loader and (step == num_steps):
+                optimality_gap, equality_violation, inequality_violation = (
+                    self.validation_step(self.validation_loader)
+                )
                 self.metrics["optimality_gap"].extend(optimality_gap)
-                self.metrics["equality_violation"].append(equality_violation)
-                self.metrics["inequality_violation"].append(inequality_violation)
-                self.tb_logger.add_scalar("Val/Optimality Gap", np.median(optimality_gap), step)
+                self.metrics["equality_violation"].extend(equality_violation)
+                self.metrics["inequality_violation"].extend(inequality_violation)
+                """ self.tb_logger.add_scalar("Val/Optimality Gap", np.median(optimality_gap), step)
                 self.tb_logger.add_scalar("Val/Equality Violation", np.median(equality_violation), step)
                 self.tb_logger.add_scalar("Val/Inequality Violation", np.median(inequality_violation), step)
-
-                print(
+ """
+                """ print(
                     f"Step={step}  LR={self.scheduler.optimizer.param_groups[0]['lr']} Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}, Val Optimality Gap={np.median(optimality_gap):.4f}, Equality violation={np.median(equality_violation):.4f}, Inequality violation={np.median(inequality_violation):.4f}"
+                ) """
+                print(
+                    f"Optimality Gap={np.median(optimality_gap):.4f}, Equality violation={np.median(equality_violation):.4f}, Inequality violation={np.median(inequality_violation):.4f}"
                 )
-
             # Save checkpoints at specified intervals
             if (checkpoint_interval) and (step % checkpoint_interval == 0):
                 self.save_checkpoint(step)
@@ -548,78 +600,7 @@ class KINN:
         """
         self.model.load_state_dict(torch.load(filepath, map_location=self.device))
         self.model.to(self.device)
-    def test_model(self, validation_loader):
-        """
-        Performs a validation step over the entire validation dataset.
 
-        Args:
-            validation_loader (DataLoader): DataLoader for the validation dataset.
-
-        Returns:
-            tuple: (average R2 score, average MAPE, average RMSE)
-        """
-        self.model.eval()
-        optimality_gaps = []
-        equality_violations = []
-        inequality_violations = []
-        with torch.no_grad():
-            for params, solutions in validation_loader:
-                params = params.to(self.device)
-                solutions = solutions.to(self.device)
-                # Create params_dict
-                params_dict = {}
-                for i, var in enumerate(self.problem.parameters):
-                    params_dict[var.name] = params[:, i]
-                # Normalize parameters
-                params_norm = self.problem.normalize_parameters(params)
-
-                # Forward pass through the model
-                norm_decision_vars, dual_eq_vars, dual_ineq_vars = self.model(
-                    params_norm
-                )
-
-                # Denormalize decision variables
-                decision_vars = self.problem.denormalize_decision(
-                    norm_decision_vars, params_dict
-                )
-
-                # Compute metrics
-                r2 = R2Score(self.num_decision_vars, multioutput="variance_weighted").to(self.device)(decision_vars, solutions)
-                
-                params_dims = {}
-
-                for param in params_dict:
-                    params_dims[param] = 0
-                optimal_cost = vmap(self.problem.cost_function, in_dims=(0, params_dims))(
-                    solutions, params_dict
-                )
-                predicted_cost = vmap(self.problem.cost_function, in_dims=(0, params_dims))(
-                    decision_vars, params_dict
-                )
-                mape = MeanAbsolutePercentageError().to(self.device)(
-                    predicted_cost, optimal_cost
-                )
-                rmse = MeanSquaredError(squared=False).to(self.device)(
-                    predicted_cost, optimal_cost
-                )
-                mae = MeanAbsoluteError().to(self.device)(predicted_cost, optimal_cost)
-                optimality_gap = ((predicted_cost - optimal_cost) / torch.clamp(torch.abs(optimal_cost), 1e-6) * 100).tolist()
-                
-                eps = torch.finfo(torch.float32).eps
-                for constraint in self.problem.constraints:
-                    expr = constraint.get_constraints(
-                        decision_vars, params_dict
-                    )  # Shape: (batch_size, n_constraints)
-                    if constraint.type == "equality":
-                        
-                        equality_violations.extend(torch.clamp(expr, min=eps).mean(-1).tolist())
-                    elif constraint.type == "inequality":
-                        inequality_violations.extend(torch.clamp(torch.relu(expr), min=eps).mean(-1).tolist())
-                
-                optimality_gaps.extend(optimality_gap)
-
-        
-        return optimality_gaps, equality_violations, inequality_violations
     def save_metrics(self, filepath):
         """
         Saves the training and validation metrics to a CSV file.
@@ -627,6 +608,8 @@ class KINN:
         Args:
             filepath (str): Path to save the metrics CSV.
         """
+        if len(self.metrics['inequality_violation']) == 0: del self.metrics['inequality_violation']
+        if len(self.metrics['equality_violation']) == 0: del self.metrics['equality_violation']
         pd.DataFrame(self.metrics).to_csv(filepath, index=False)
 
     def save_losses(self, filepath):
