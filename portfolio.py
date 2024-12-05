@@ -80,7 +80,7 @@ model = KINN(
 )
 
 
-num_steps = 3
+num_steps = 10000
 batch_size = 1024
 print("Starting training...")
 model.train_model(

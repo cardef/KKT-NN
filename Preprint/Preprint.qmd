@@ -340,14 +340,13 @@ library(latex2exp)
 #| label: fig-training
 #| echo: false
 #| fig-cap: "Loss terms during training"
-log_df <- read_csv("../Projection/log.csv", show_col_types=FALSE)
+log_df <- read_csv("../Projection/projection_losses.csv", show_col_types=FALSE)
 log_df <- log_df%>% pivot_longer(!Step, names_to="Loss", values_to="Value")
 
 extrafont::loadfonts(quiet = TRUE)
 ggplot(log_df, aes(x=Step, y=Value, color=Loss)) + geom_line()   + scale_y_continuous(transform = "pseudo_log")+scale_colour_tableau(
   palette = "Tableau 10", direction=-1
 ) + theme_light()
-#ggpar(plot, yscale="log10")
 ```
 
 
@@ -408,21 +407,13 @@ By increasing the number of points, an inference time comparison was performed o
 #| fig-subcap: 
 #|      - MAE
 #|      - RMSE
-#|      - MAPE
-#|      - $R^{2}$
-metrics_df <- read_csv("../Projection/metrics.csv", show_col_types=FALSE)
+metrics_df <- read_csv("../Projection/projection_metrics.csv", show_col_types=FALSE)
 
 extrafont::loadfonts(quiet = TRUE)
-ggplot(metrics_df %>%select(Step, MAE), aes(x=Step, y=MAE,)) + geom_line()   + scale_colour_tableau(
+ggplot(metrics_df %>%select(Sample, optimality_gap), aes(x=optimality_gap,)) + geom_density()   + scale_colour_tableau(
   palette = "Tableau 10", direction=-1
 ) + scale_y_log10("Value") + theme_light()
-ggplot(metrics_df %>%select(Step, RMSE), aes(x=Step, y=RMSE,)) + geom_line()   + scale_colour_tableau(
-  palette = "Tableau 10", direction=-1
-) + scale_y_log10("Value") + theme_light()
-ggplot(metrics_df%>%select(Step, MAPE), aes(x=Step, y=MAPE,)) + geom_line()   + scale_colour_tableau(
-  palette = "Tableau 10", direction=-1
-) + scale_y_log10("Value") + theme_light()
-ggplot(metrics_df%>%select(Step, R2), aes(x=Step, y=R2,)) + geom_line()   + scale_colour_tableau(
+ggplot(metrics_df %>%select(Sample, inequality_violation), aes(x=inequality_violation,)) + geom_density()   + scale_colour_tableau(
   palette = "Tableau 10", direction=-1
 ) + scale_y_log10("Value") + theme_light()
 ```

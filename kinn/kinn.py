@@ -172,12 +172,13 @@ class KINN:
 
         # Initialize metrics dictionary
         self.metrics = {
+            "Sample": [], 
             "optimality_gap": [],
             "equality_violation": [],
             "inequality_violation": [],
         }
 
-        self.losses = {"stationarity": [], "feasibility": [], "complementarity": []}
+        self.losses = {"Step": [], "Stationarity": [], "Feasibility": [], "Complementarity": []}
         # Initialize Sobol engine for parameter sampling
         self.sobol_eng = torch.quasirandom.SobolEngine(
             dimension=self.input_dim, scramble=True, seed=42
@@ -458,10 +459,10 @@ class KINN:
                         * 100
                     ).tolist()
                 )
-
+                equality_violations_=[]
+                inequality_violations_ = []
                 for constraint in self.problem.constraints:
-                    equality_violations_=[]
-                    inequality_violations_ = []
+                    
                     expr = constraint.get_constraints(
                         decision_vars, params_dict
                     )  # Shape: (batch_size, n_constraints)
@@ -475,8 +476,8 @@ class KINN:
                             torch.clamp(torch.relu(expr), min=eps).mean(-1).tolist()
                         )
 
-                if len(equality_violations_) > 0: equality_violations_ = torch.tensor(equality_violations_).mean(-1).tolist()
-                if len(inequality_violations_) > 0: inequality_violations_ = torch.tensor(inequality_violations_).mean(-1).tolist()
+                if len(equality_violations_) > 0: equality_violations_ = torch.tensor(equality_violations_).T.mean(-1).tolist()
+                if len(inequality_violations_) > 0: inequality_violations_ = torch.tensor(inequality_violations_).T.mean(-1).tolist()
                 equality_violations.extend((equality_violations_))
                 inequality_violations.extend((inequality_violations_))
                 optimality_gaps.extend(optimality_gap)
@@ -518,9 +519,10 @@ class KINN:
                 f"Step={step}  LR={self.scheduler.optimizer.param_groups[0]['lr']} Train Loss={train_loss:.6f}, Stationarity Loss={stationarity_loss:.6f}, Feasibility Loss={feasibility_loss:.6f}, Complementarity Loss={complementarity_loss:.6f}"
             )
             self.tb_logger.add_scalar("Train/Loss", train_loss, step)
-            self.losses["stationarity"].append(stationarity_loss)
-            self.losses["feasibility"].append(feasibility_loss)
-            self.losses["complementarity"].append(complementarity_loss)
+            self.losses["Stationarity"].append(stationarity_loss)
+            self.losses["Feasibility"].append(feasibility_loss)
+            self.losses["Complementarity"].append(complementarity_loss)
+            self.losses["Step"].append(step)
             self.scheduler.step(train_loss)
 
             # Check for early stopping
@@ -543,6 +545,7 @@ class KINN:
                 optimality_gap, equality_violation, inequality_violation = (
                     self.validation_step(self.validation_loader)
                 )
+                self.metrics['Sample'] = list(range(len(optimality_gap)))
                 self.metrics["optimality_gap"].extend(optimality_gap)
                 self.metrics["equality_violation"].extend(equality_violation)
                 self.metrics["inequality_violation"].extend(inequality_violation)

@@ -90,7 +90,7 @@ model = KINN(
 )
 
 
-num_steps = 3
+num_steps = 100
 batch_size = 1024
 print("Starting training...")
 model.train_model(
@@ -100,8 +100,6 @@ model.train_model(
 
 
 model.save_model("Projection/kkt_nn_projection.pth")
-print(len(model.metrics['optimality_gap']))
-print(len(model.metrics['inequality_violation']))
 model.save_metrics("Projection/projection_metrics.csv")
 model.save_losses("Projection/projection_losses.csv")
 print("Model and metrics saved.")
