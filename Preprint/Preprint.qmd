@@ -136,7 +136,33 @@ This vector-valued loss function is minimized through a Jacobian descent [@quint
 {{< pagebreak >}}
 # Case studies
 ## Portfolio optimization
+
+Portfolio optimization is a classic problem in quantitative finance, aimed at the allocation of capital across a set of financial assets to achieve a predefined objective while satisfying specific constraints. Portfolio optimization is typically based on Markowitz model: given $N$ securities and assuming the knowledge of excpected return of each security $\mu \in \mathbb{R}^N$ and of the covariance matrix of returns, used to model risks associated with the securities, $\Sigma \in \mathbb{R}^{N\times N}$, we want to find the vector $w \in [0, 1]^N$, where $w_i$ is the fraction of funds invested into security $i$, such that:
+
+$$
+\begin{aligned}
+\max_{w \in [0, 1]^N } \quad & w^T\mu - \frac{\delta}{2}w^T\Sigma w \\
+\textrm{s.t.}\quad & \sum_{i=1}^N w_i = 1\\
+\end{aligned}
+$$
+
+with $\delta \in \mathbb{R}^+$ a risk aversion parameter.
+
 ### Problem description
+
+The case study is based on the price history of 20 assets. The expected return value of each asset is estimated with the geometric mean of its annual increments, while a Ledoit Wolf shrinkage estimate is used as the covariance matrix. To make the problem more complex, constraints were added on the funds to be allocated defined by six parameters:
+
+- $\overline{T}$: maximum fraction of funds allocated in technological assets, corresponding to the indices $1, 2, 3, 4, 5, 7$,
+- $\overline{R}$: maximum fraction of funds allocated in retail assets, corresponding to the indices $8, 13, 16, 29$,
+- $\overline{F}$: maximum fraction of funds allocated in financial institutions group, corresponding to the indices $9, 17, 19$,
+- $\overline{E}$: maximum fraction of funds allocated in energy assets, corresponding to the indices $14, 15$,
+- U: exact fraction of funds allocated in utility assets, corresponding to the index $6$,
+- A: exact fraction of funds allocated in airline assets, corresponding to the index $12$.
+
+Hence, the problem could be stated in standard form as:
+
+
+  
 ### Experimental results
 #### Training
 #### Evaluation
@@ -331,6 +357,7 @@ library(GGally)
 library(akima)
 library(hrbrthemes)
 library(extrafont)
+library(scales)
 library(latex2exp)
 
 
@@ -410,12 +437,12 @@ By increasing the number of points, an inference time comparison was performed o
 metrics_df <- read_csv("../Projection/projection_metrics.csv", show_col_types=FALSE)
 
 extrafont::loadfonts(quiet = TRUE)
-ggplot(metrics_df %>%select(Sample, optimality_gap), aes(x=optimality_gap,)) + geom_density()   + scale_colour_tableau(
-  palette = "Tableau 10", direction=-1
-) + scale_y_log10("Value") + theme_light()
-ggplot(metrics_df %>%select(Sample, inequality_violation), aes(x=inequality_violation,)) + geom_density()   + scale_colour_tableau(
-  palette = "Tableau 10", direction=-1
-) + scale_y_log10("Value") + theme_light()
+ggplot(metrics_df %>%select(Sample, optimality_gap), aes(x=optimality_gap,)) + geom_density(fill="grey", alpha = 0.5)   + scale_colour_tableau(
+  palette = "Tableau 10", direction=1
+) + scale_x_log10("Value", labels=percent_format(scale = 1)) + theme_light()
+ggplot(metrics_df %>%select(Sample, inequality_violation), aes(x=inequality_violation,)) + geom_density(fill="grey", alpha = 0.5)   + scale_colour_tableau(
+  palette = "Tableau 10", direction=1
+) + scale_x_log10("Value") + theme_light()
 ```
 ```{r}
 #| label: fig-times
