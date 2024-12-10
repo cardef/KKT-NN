@@ -150,10 +150,10 @@ with $\delta \in \mathbb{R}^+$ a risk aversion parameter.
 
 ### Problem description
 
-The case study is based on the price history of 20 assets. The expected return value of each asset is estimated with the geometric mean of its annual increments, while a Ledoit Wolf shrinkage estimate is used as the covariance matrix. To make the problem more complex, constraints were added on the funds to be allocated defined by six parameters:
+The case study is based on the price history of 20 assets. The expected return value of each asset is estimated with the geometric mean of its annual increments, while a Ledoit-Wolf shrinkage estimate is used as the covariance matrix. To make the problem more complex, constraints were added on the funds to be allocated defined by six parameters:
 
 - $\overline{T}$: maximum fraction of funds allocated in technological assets, corresponding to the indices $1, 2, 3, 4, 5, 7$,
-- $\overline{R}$: maximum fraction of funds allocated in retail assets, corresponding to the indices $8, 13, 16, 29$,
+- $\overline{R}$: maximum fraction of funds allocated in retail assets, corresponding to the indices $8, 13, 16, 20$,
 - $\overline{F}$: maximum fraction of funds allocated in financial institutions group, corresponding to the indices $9, 17, 19$,
 - $\overline{E}$: maximum fraction of funds allocated in energy assets, corresponding to the indices $14, 15$,
 - U: exact fraction of funds allocated in utility assets, corresponding to the index $6$,
@@ -161,9 +161,24 @@ The case study is based on the price history of 20 assets. The expected return v
 
 Hence, the problem could be stated in standard form as:
 
+$$
+\begin{aligned}
+\min_{w \in [0, 1]^N } \quad & - w^T\mu + \frac{\delta}{2}w^T\Sigma w \\
+\textrm{s.t.}\quad & \sum_{i=1}^N w_i - 1 = 0\\
+& w_6 - U = 0\\
+& w_{12} - A = 0\\
+&w_1 + w_2 + w_3 + w_4 + w_5 + w_7 - \overline{T} \leq 0\\
+&w_8 + w_2 + w_{13} + w_{16} + w_{20} - \overline{R} \leq 0\\
+&w_9 + w_{17} + w_{19} - \overline{F} \leq 0\\
+&w_{14} + w_{15} - \overline{E} \leq 0
+\end{aligned}
+$${#eq-portfolio_standard_form}
 
-  
+
 ### Experimental results
+
+
+
 #### Training
 #### Evaluation
 
