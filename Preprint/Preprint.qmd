@@ -108,7 +108,7 @@ Assuming that the range of each parameter is known a priori, $\Theta$  is linear
 \begin{align}
 [\hat{X}, \hat{\Lambda}, \hat{N}] &= \textrm{KINN}(\Theta)\\
 \hat{X} \in \mathbb{R}^{B\times n}&, \quad \hat X_i = \hat{x}^{(i)}\\
-\hat{\Lambda} \in \mathbb{R}^{0^{B\times m}}_+&, \quad \hat\Lambda_i = \hat\lambda^{(i)}\\
+\hat{\Lambda} \in \mathbb{R}^{+^{B\times m}}_0&, \quad \hat\Lambda_i = \hat\lambda^{(i)}\\
 \hat{N} \in \mathbb{R}^{B\times p}&, \quad \hat{N}_i = \hat\nu^{(i)}
 \end{align}
 ```
@@ -177,7 +177,22 @@ $${#eq-portfolio_standard_form}
 
 ### Experimental results
 
+The problem described has a 20-dimensional decision variable, 7 scalar parameters, 3 equality constraints and 4 inequality constraints:
 
+\begin{equation}
+ [\hat{X}, \hat\Lambda, \hat N] = \mathrm{KINN}(\Theta^\prime)
+\end{equation}
+
+with:
+
+\begin{align}
+\Theta^\prime \in \mathbb{R}^{B \times 7}, \quad&\Theta^\prime_{i} = (\delta^{(i)}, \overline{T}^{(i)},\overline{R}^{(i)},  \overline{E}^{(i)}, \overline{F}^{(i)},  U^{(i)}, A^{(i)})\\
+\hat{X} \in \mathbb{R}^{B \times 20}, \quad&\hat{X}_{i} = \hat{x}^{(i)} = (w_1, \dots, w_{20})\\
+\hat\Lambda \in \mathbb{R}_0^{+^{B \times 4}}, \quad&\hat\Lambda_{i} = \hat\lambda^{(i)}\\
+\hat N \in \mathbb{R}^{{B \times 3}}, \quad&\hat N_{i} = \hat \nu^{(i)}
+\end{align}
+
+The neural network was defined to have four residual layers in each of the branches, the embedding layer and the three output layers. Each layer consists of 32 neurons.
 
 #### Training
 #### Evaluation
@@ -293,7 +308,7 @@ With associated KKT conditions:
 \end{align}
 
 ### Experimental results
-The problem described has a two-dimensional optimization variable, seven scalar parameters and seven constraints:
+The problem described has a two-dimensional decision variable, seven scalar parameters and seven inequality constraints:
 
 \begin{equation}
  [\hat{X}, \hat\Lambda] = \mathrm{KINN}(\Theta^\prime)
@@ -303,7 +318,7 @@ with:
 \begin{align}
 \Theta^\prime \in \mathbb{R}^{B \times 7}, \quad&\Theta^\prime_{i} = (a_P^{(i)}, a_Q^{(i)},\overline{P}_g^{(i)},  P_g^{+^{(i)}}, \overline{Q}_g^{(i)},  Q_g^{+^{(i)}}, P^{\textrm{(max)}^{(i)}}_{g,t})\\
 \hat{X} \in \mathbb{R}^{B \times 2}, \quad&\hat{X}_{i} = \hat{x}^{(i)} = (\hat{P}^{(i)}, \hat{Q}^{(i)})\\
-\hat\Lambda \in \mathbb{R}_+^{0^{B \times 7}}, \quad&\hat\Lambda_{i} = \hat\lambda^{(i)}
+\hat\Lambda \in \mathbb{R}_0^{+^{B \times 7}}, \quad&\hat\Lambda_{i} = \hat\lambda^{(i)}
 \end{align}
 
 | Parameter            | Range  |
