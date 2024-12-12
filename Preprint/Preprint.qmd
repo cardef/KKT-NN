@@ -192,6 +192,18 @@ with:
 \hat N \in \mathbb{R}^{{B \times 3}}, \quad&\hat N_{i} = \hat \nu^{(i)}
 \end{align}
 
+At each training step, a random batch of parameters $\Theta$ was sampled:
+
+\begin{align}
+a_P^{(i)} &\sim U(0~\mathrm{p.u}., 1~\mathrm{p.u.})\\
+a_Q^{(i)} &\sim U(-1~\mathrm{p.u}., 1~\mathrm{p.u.})\\
+\overline{P}_g^{(i)} &\sim U(0.2~\mathrm{p.u}., 0.8~\mathrm{p.u.})\\
+P_g^{+^{(i)}} &\sim U(0~\mathrm{p.u}., \overline{P}_g^{(i)})\\
+\overline{Q}_g^{(i)} &\sim U(0.2~\mathrm{p.u}., 0.8~\mathrm{p.u.})\\
+Q_g^{+^{(i)}} &\sim U(0~\mathrm{p.u}., \overline{Q}_g^{(i)})\\
+P^{\textrm{(max)}^{(i)}}_{g,t} &\sim U(0~\mathrm{p.u}., \overline{P}_g^{(i)})
+\end{align}
+
 The neural network was defined to have four residual layers in each of the branches, the embedding layer and the three output layers. Each layer consists of 32 neurons.
 
 #### Training
